@@ -1,0 +1,16 @@
+ 0: amrex::BLBackTrace::print_backtrace_info(__sFILE*) (in main3d.gnu.MPI.ex) (AMReX_BLBackTrace.cpp:190)
+
+ 1: amrex::BLBackTrace::handler(int) (in main3d.gnu.MPI.ex) (AMReX_BLBackTrace.cpp:100)
+
+ 2: _sigtramp (in libsystem_platform.dylib) + 29
+
+ 4: std::__1::enable_if<IsFabArray<amrex::MultiFab>::value, void>::type amrex::experimental::detail::ParallelFor<amrex::MultiFab, LBM_hydrovars_modified(amrex::MultiFab&, amrex::MultiFab&, amrex::MultiFab&)::'lambda'(int, int, int, int)>(amrex::MultiFab const&, amrex::IntVect const&, amrex::IntVect const&, bool, LBM_hydrovars_modified(amrex::MultiFab&, amrex::MultiFab&, amrex::MultiFab&)::'lambda'(int, int, int, int) const&) (in main3d.gnu.MPI.ex) (AMReX_MFParallelForC.H:26)
+
+ 5: LBM_timestep(amrex::Geometry const&, amrex::MultiFab&, amrex::MultiFab&, amrex::MultiFab&, amrex::MultiFab&, amrex::MultiFab&, amrex::MultiFab&, amrex::MultiFab&, amrex::MultiFab&) (in main3d.gnu.MPI.ex) (LBM_binary.H:562)
+
+ 6: main_driver(char const*) (in main3d.gnu.MPI.ex) (main_driver.cpp:0)
+
+ 7: main (in main3d.gnu.MPI.ex) (main.cpp:25)
+
+ 8: start (in dyld) + 1942
+
