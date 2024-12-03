@@ -18,7 +18,7 @@ bool loopNaN(MultiFab& mfab, bool ifPrintNANGrid){
         //Print() << '(' << x << "," << y << ',' << z << "," << nbx << ")-" << mfab_multi_array4D[nbx](x,y,z,1) << '\t';
             if(std::isnan(mfab_multi_array4D[nbx](x,y,z,n))){
                 if(ifPrintNANGrid){
-                    Print() << n << "-(" << x << "," << y << ',' << z << "," << nbx << ")-" << mfab_multi_array4D[nbx](x,y,z,5) << '\t';
+                    Print() << n << "-(" << x << "," << y << ',' << z << "," << nbx << ")-" << mfab_multi_array4D[nbx](x,y,z,n) << '\t';
                 }
                 iftrue = true;
             }

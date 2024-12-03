@@ -1,0 +1,8 @@
+{
+    "files.associations": {
+        "random": "cpp",
+        "complex": "cpp",
+        "cmath": "cpp",
+        "numbers": "cpp"
+    }
+}

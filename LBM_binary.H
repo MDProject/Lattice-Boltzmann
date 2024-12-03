@@ -9,7 +9,7 @@
 
 AMREX_GPU_MANAGED Real tau_f = 1.; // tau=0.5*(1.+1./sqrt(3.)) minimizes spurious currents according to Swift et al.
 AMREX_GPU_MANAGED Real tau_g = tau_f;
-AMREX_GPU_MANAGED Real alpha0 = 3.;
+AMREX_GPU_MANAGED Real alpha0 = 4.;
 AMREX_GPU_MANAGED Real alpha1 = 0.;//alpha1;
 const Real epsilon = 1e-10;
 
@@ -47,16 +47,22 @@ inline void thermal_noise(MultiFab& fnoisevs, MultiFab& gnoisevs, MultiFab& hydr
   ParallelFor(fnoisevs, IntVect(0), [=] AMREX_GPU_DEVICE(int nbx, int x, int y, int z) { // IntVect(0): no ghost cells when loop over the grid sites;
     Real rho = hydrobar[nbx](x, y, z, 0);
     Real phi = hydrobar[nbx](x, y, z, 1);
-    Real rhot = rho + phi; 
+    Real rhot = rho + phi;  // equilibrium density???
     fnoise[nbx](x,y,z,0) = 0.;
     gnoise[nbx](x,y,z,0) = 0.;
     for (int a=1; a<=AMREX_SPACEDIM; a++) {
-      fnoise[nbx](x,y,z,a) = sqrt(2.*(tau_f_bar - tau_f_bar2)*kBT*rho*phi/rhot)*draw_from_pdf_normal(0., 1.);
+      fnoise[nbx](x,y,z,a) = sqrt(2.*(tau_f_bar - tau_f_bar2)*kBT*std::abs(rho*phi)/rhot)*draw_from_pdf_normal(0., 1.);
       gnoise[nbx](x,y,z,a) = -fnoise[nbx](x,y,z,a);
+      /*if(std::isnan(gnoise[nbx](x,y,z,a))){
+        Print() << "thermal_noise(1~3): " << gnoise[nbx](x,y,z,a) << "rho,phi,rtot" << rho << ',' << phi << ',' << rhot << "-*-";
+      }*/
     }
     for (int a=AMREX_SPACEDIM+1; a<nvel; a++) {
-      fnoise[nbx](x,y,z,a) = sqrt(2.*(tau_f_bar - tau_f_bar2)*kBT/cs2*b[a]*rho)*draw_from_pdf_normal(0., 1.);
-      gnoise[nbx](x,y,z,a) = sqrt(2.*(tau_g_bar - tau_g_bar2)*kBT/cs2*b[a]*phi)*draw_from_pdf_normal(0., 1.);
+      fnoise[nbx](x,y,z,a) = sqrt(2.*(tau_f_bar - tau_f_bar2)*kBT/cs2*b[a]*std::abs(rho))*draw_from_pdf_normal(0., 1.);
+      gnoise[nbx](x,y,z,a) = sqrt(2.*(tau_g_bar - tau_g_bar2)*kBT/cs2*b[a]*std::abs(phi))*draw_from_pdf_normal(0., 1.);
+      /*if(std::isnan(gnoise[nbx](x,y,z,a))){
+        Print() << "thermal_noise(n>=4): " << gnoise[nbx](x,y,z,a) << "-*-";
+      }*/
     }
   });
 }
@@ -207,16 +213,41 @@ void hydrovars(int x, int y, int z, // real density & momentum;
   h(x,y,z,0) = rho; // rho
   h(x,y,z,1) = phi;  // phi
   // velocity of fluid f, nf[1~D] for x~z components
-  h(x,y,z,2) = rho*ufbar(0) + 0.5*rho*afbar(0) - 0.5/(tau_f+0.5)*rho*phi/(rho+phi)*(ufbar(0)-ugbar(0) + 0.5*(afbar(0)-agbar(0))) + nf(x,y,z,1); 
-  h(x,y,z,3) = rho*ufbar(1) + 0.5*rho*afbar(1) - 0.5/(tau_f+0.5)*rho*phi/(rho+phi)*(ufbar(1)-ugbar(1) + 0.5*(afbar(1)-agbar(1))) + nf(x,y,z,2);
-  h(x,y,z,4) = rho*ufbar(2) + 0.5*rho*afbar(2) - 0.5/(tau_f+0.5)*rho*phi/(rho+phi)*(ufbar(2)-ugbar(2) + 0.5*(afbar(2)-agbar(2))) + nf(x,y,z,3);
+  
+  // **********************   WITHOUT NOISE TERM   **********************;
+  h(x,y,z,2) = ufbar(0) + 0.5*afbar(0) - 0.5/(tau_f+0.5)*phi/(rho+phi)*(ufbar(0)-ugbar(0) + 0.5*(afbar(0)-agbar(0)));// + 0.5*nf(x,y,z,1)/rho; 
+  h(x,y,z,3) = ufbar(1) + 0.5*afbar(1) - 0.5/(tau_f+0.5)*phi/(rho+phi)*(ufbar(1)-ugbar(1) + 0.5*(afbar(1)-agbar(1)));// + 0.5*nf(x,y,z,2)/rho;
+  h(x,y,z,4) = ufbar(2) + 0.5*afbar(2) - 0.5/(tau_f+0.5)*phi/(rho+phi)*(ufbar(2)-ugbar(2) + 0.5*(afbar(2)-agbar(2)));// + 0.5*nf(x,y,z,3)/rho;
+
+  h(x,y,z,6) = ugbar(0) + 0.5*agbar(0) - 0.5/(tau_g+0.5)*rho/(rho+phi)*(ugbar(0)-ufbar(0) + 0.5*(agbar(0)-afbar(0)));// + 0.5*ng(x,y,z,1)/phi;
+  h(x,y,z,7) = ugbar(1) + 0.5*agbar(1) - 0.5/(tau_g+0.5)*rho/(rho+phi)*(ugbar(1)-ufbar(1) + 0.5*(agbar(1)-afbar(1)));// + 0.5*ng(x,y,z,2)/phi;
+  h(x,y,z,8) = ugbar(2) + 0.5*agbar(2) - 0.5/(tau_g+0.5)*rho/(rho+phi)*(ugbar(2)-ufbar(2) + 0.5*(agbar(2)-afbar(2)));// + 0.5*ng(x,y,z,3)/phi;*/
+  
+  /*if(rho>epsilon){
+    h(x,y,z,2) = ufbar(0) + 0.5*afbar(0) - 0.5/(tau_f+0.5)*phi/(rho+phi)*(ufbar(0)-ugbar(0) + 0.5*(afbar(0)-agbar(0))) + 0.5*nf(x,y,z,1)/rho;
+    h(x,y,z,3) = ufbar(1) + 0.5*afbar(1) - 0.5/(tau_f+0.5)*phi/(rho+phi)*(ufbar(1)-ugbar(1) + 0.5*(afbar(1)-agbar(1))) + 0.5*nf(x,y,z,2)/rho;
+    h(x,y,z,4) = ufbar(2) + 0.5*afbar(2) - 0.5/(tau_f+0.5)*phi/(rho+phi)*(ufbar(2)-ugbar(2) + 0.5*(afbar(2)-agbar(2))) + 0.5*nf(x,y,z,3)/rho;
+  }else{
+    h(x,y,z,2) = ufbar(0) + 0.5*afbar(0) - 0.5/(tau_f+0.5)*phi/(rho+phi)*(ufbar(0)-ugbar(0) + 0.5*(afbar(0)-agbar(0))); 
+    h(x,y,z,3) = ufbar(1) + 0.5*afbar(1) - 0.5/(tau_f+0.5)*phi/(rho+phi)*(ufbar(1)-ugbar(1) + 0.5*(afbar(1)-agbar(1)));
+    h(x,y,z,4) = ufbar(2) + 0.5*afbar(2) - 0.5/(tau_f+0.5)*phi/(rho+phi)*(ufbar(2)-ugbar(2) + 0.5*(afbar(2)-agbar(2)));
+  }*/
 
   h(x,y,z,5) = hbar(x,y,z,5);  // pressure, temperally keep unchanged;
 
   // velocity of fluid g, ng[1~D] for x~z components
-  h(x,y,z,6) = phi*ugbar(0) + 0.5*phi*agbar(0) - 0.5/(tau_g+0.5)*rho*phi/(rho+phi)*(ugbar(0)-ufbar(0) + 0.5*(agbar(0)-afbar(0))) + ng(x,y,z,1);
-  h(x,y,z,7) = phi*ugbar(1) + 0.5*phi*agbar(1) - 0.5/(tau_g+0.5)*rho*phi/(rho+phi)*(ugbar(1)-ufbar(1) + 0.5*(agbar(1)-afbar(1))) + ng(x,y,z,2);
-  h(x,y,z,8) = phi*ugbar(2) + 0.5*phi*agbar(2) - 0.5/(tau_g+0.5)*rho*phi/(rho+phi)*(ugbar(2)-ufbar(2) + 0.5*(agbar(2)-afbar(2))) + ng(x,y,z,3);
+  /*if(phi>epsilon){
+    h(x,y,z,6) = ugbar(0) + 0.5*agbar(0) - 0.5/(tau_g+0.5)*rho/(rho+phi)*(ugbar(0)-ufbar(0) + 0.5*(agbar(0)-afbar(0))) + 0.5*ng(x,y,z,1)/phi;
+    h(x,y,z,7) = ugbar(1) + 0.5*agbar(1) - 0.5/(tau_g+0.5)*rho/(rho+phi)*(ugbar(1)-ufbar(1) + 0.5*(agbar(1)-afbar(1))) + 0.5*ng(x,y,z,2)/phi;
+    h(x,y,z,8) = ugbar(2) + 0.5*agbar(2) - 0.5/(tau_g+0.5)*rho/(rho+phi)*(ugbar(2)-ufbar(2) + 0.5*(agbar(2)-afbar(2))) + 0.5*ng(x,y,z,3)/phi;
+    /*if(std::isnan(h(x,y,z,6))){
+      Print() << "noise: " << 0.5*ng(x,y,z,1) << "-*-";
+    }
+  }else{
+    h(x,y,z,6) = ugbar(0) + 0.5*agbar(0) - 0.5/(tau_g+0.5)*rho/(rho+phi)*(ugbar(0)-ufbar(0) + 0.5*(agbar(0)-afbar(0)));
+    h(x,y,z,7) = ugbar(1) + 0.5*agbar(1) - 0.5/(tau_g+0.5)*rho/(rho+phi)*(ugbar(1)-ufbar(1) + 0.5*(agbar(1)-afbar(1)));
+    h(x,y,z,8) = ugbar(2) + 0.5*agbar(2) - 0.5/(tau_g+0.5)*rho/(rho+phi)*(ugbar(2)-ufbar(2) + 0.5*(agbar(2)-afbar(2)));
+  }*/
 
   // acceleration of fluid f; equal to modified quantities;
   h(x,y,z,9) = hbar(x,y,z,9);

@@ -18,7 +18,7 @@ inline void WriteOutput(int step,
 			const Vector<std::string>& var_names,
 			const Geometry& geom, bool tagHDF5 = false) {
   const Real time = step;
-  const std::string& pltfile = amrex::Concatenate("./lbm_data_shshan_alpha_0_xi_0/plt",step,5);
+  const std::string& pltfile = amrex::Concatenate("./lbm_data_shshan_alpha0_4_xi_0/plt",step,5);
 
   /*if(!filesystem::exists(pltfile)){
     if (mkdir(pltfile.c_str(), S_IRWXU | S_IRWXG | S_IROTH | S_IXOTH) == 0 && step < 10 ){    // -1 for unsuccessful;
@@ -104,7 +104,7 @@ void main_driver(const char* argv) {
   int max_grid_size = 8;
 
   // default time stepping parameters
-  int nsteps = 500;
+  int nsteps = 300;
   int plot_int = 10;
 
   // default droplet radius (% of box size)
@@ -160,6 +160,7 @@ void main_driver(const char* argv) {
 
   // INITIALIZE
   LBM_init_droplet(radius, geom, fold, gold, hydrovs, hydrovsbar, fnoisevs, gnoisevs);
+  MultiFabNANCheck(hydrovs, true, 0);
   // Write a plotfile of the initial data if plot_int > 0
   if (plot_int > 0)
     WriteOutput(0, hydrovs, var_names, geom);
@@ -168,7 +169,7 @@ void main_driver(const char* argv) {
   // TIMESTEP
   for (int step=1; step <= nsteps; ++step) {
     LBM_timestep(geom, fold, gold, fnew, gnew, hydrovs, hydrovsbar, fnoisevs, gnoisevs);
-    MultiFabNANCheck(hydrovs, false, step);
+    MultiFabNANCheck(hydrovs, true, step);
     if (plot_int > 0 && step%plot_int ==0){
       //PrintDensityFluctuation(hydrovs, var_names, step);
       WriteOutput(step, hydrovs, var_names, geom, tagHDF5);
@@ -176,7 +177,7 @@ void main_driver(const char* argv) {
     }
   }
   
-  //PrintMassConservation(hydrovs, var_names, 1., radius);
+  PrintMassConservation(hydrovs, var_names, 1., radius);
 
   // Call the timer again and compute the maximum difference between the start time 
   // and stop time over all processors
