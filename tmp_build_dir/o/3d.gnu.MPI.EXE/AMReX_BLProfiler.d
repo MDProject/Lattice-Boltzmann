@@ -9,15 +9,18 @@ tmp_build_dir/o/3d.gnu.MPI.EXE/AMReX_BLProfiler.o: \
   ../../amrex/Src/Base/AMReX_GpuQualifiers.H \
   ../../amrex/Src/Base/AMReX_GpuPrint.H \
   ../../amrex/Src/Base/AMReX_GpuAssert.H \
-  ../../amrex/Src/Base/AMReX_ccse-mpi.H /usr/local/include/mpi.h \
-  /usr/local/include/mpi_portable_platform.h \
+  ../../amrex/Src/Base/AMReX_ccse-mpi.H \
+  /usr/local/Cellar/open-mpi/5.0.5/include/mpi.h \
+  /usr/local/Cellar/open-mpi/5.0.5/include/mpi_portable_platform.h \
   ../../amrex/Src/Base/AMReX_Exception.H \
   ../../amrex/Src/Base/AMReX_GpuControl.H \
   ../../amrex/Src/Base/AMReX_GpuTypes.H \
   ../../amrex/Src/Base/AMReX_BLassert.H \
   ../../amrex/Src/Base/AMReX_SPACE.H \
   ../../amrex/Src/Base/AMReX_Algorithm.H \
-  ../../amrex/Src/Base/AMReX_Dim3.H ../../amrex/Src/Base/AMReX_Math.H
+  ../../amrex/Src/Base/AMReX_Dim3.H ../../amrex/Src/Base/AMReX_Math.H \
+  ../../amrex/Src/Base/AMReX_SmallMatrix.H \
+  ../../amrex/Src/Base/AMReX_ConstexprFor.H
 
 ../../amrex/Src/Base/AMReX_BLFort.H:
 
@@ -43,9 +46,9 @@ tmp_build_dir/s/3d.gnu.MPI.EXE/AMReX_Config.H:
 
 ../../amrex/Src/Base/AMReX_ccse-mpi.H:
 
-/usr/local/include/mpi.h:
+/usr/local/Cellar/open-mpi/5.0.5/include/mpi.h:
 
-/usr/local/include/mpi_portable_platform.h:
+/usr/local/Cellar/open-mpi/5.0.5/include/mpi_portable_platform.h:
 
 ../../amrex/Src/Base/AMReX_Exception.H:
 
@@ -62,3 +65,7 @@ tmp_build_dir/s/3d.gnu.MPI.EXE/AMReX_Config.H:
 ../../amrex/Src/Base/AMReX_Dim3.H:
 
 ../../amrex/Src/Base/AMReX_Math.H:
+
+../../amrex/Src/Base/AMReX_SmallMatrix.H:
+
+../../amrex/Src/Base/AMReX_ConstexprFor.H:

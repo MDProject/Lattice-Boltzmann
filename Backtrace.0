@@ -1,16 +1,18 @@
- 0: amrex::BLBackTrace::print_backtrace_info(__sFILE*) (in main3d.gnu.MPI.ex) (AMReX_BLBackTrace.cpp:190)
+ 0: amrex::BLBackTrace::print_backtrace_info(__sFILE*) (in main3d.gnu.MPI.ex) (AMReX_BLBackTrace.cpp:203)
 
- 1: amrex::BLBackTrace::handler(int) (in main3d.gnu.MPI.ex) (AMReX_BLBackTrace.cpp:100)
+ 1: amrex::BLBackTrace::handler(int) (in main3d.gnu.MPI.ex) (AMReX_BLBackTrace.cpp:101)
 
  2: _sigtramp (in libsystem_platform.dylib) + 29
 
- 4: std::__1::enable_if<IsFabArray<amrex::MultiFab>::value, void>::type amrex::experimental::detail::ParallelFor<amrex::MultiFab, LBM_hydrovars_modified(amrex::MultiFab&, amrex::MultiFab&, amrex::MultiFab&)::'lambda'(int, int, int, int)>(amrex::MultiFab const&, amrex::IntVect const&, amrex::IntVect const&, bool, LBM_hydrovars_modified(amrex::MultiFab&, amrex::MultiFab&, amrex::MultiFab&)::'lambda'(int, int, int, int) const&) (in main3d.gnu.MPI.ex) (AMReX_MFParallelForC.H:26)
+ 4: thermal_noise(amrex::MultiFab&, amrex::MultiFab&, amrex::MultiFab&)::'lambda'(int, int, int, int)::operator()(int, int, int, int) const (in main3d.gnu.MPI.ex) (LBM_binary.H:61)
 
- 5: LBM_timestep(amrex::Geometry const&, amrex::MultiFab&, amrex::MultiFab&, amrex::MultiFab&, amrex::MultiFab&, amrex::MultiFab&, amrex::MultiFab&, amrex::MultiFab&, amrex::MultiFab&) (in main3d.gnu.MPI.ex) (LBM_binary.H:590)
+ 5: std::__1::enable_if<IsFabArray<amrex::MultiFab>::value, void>::type amrex::experimental::detail::ParallelFor<amrex::MultiFab, thermal_noise(amrex::MultiFab&, amrex::MultiFab&, amrex::MultiFab&)::'lambda'(int, int, int, int)>(amrex::MultiFab const&, amrex::IntVectND<3> const&, amrex::IntVectND<3> const&, bool, thermal_noise(amrex::MultiFab&, amrex::MultiFab&, amrex::MultiFab&)::'lambda'(int, int, int, int) const&) (in main3d.gnu.MPI.ex) (AMReX_MFParallelForC.H:26)
 
- 6: main_driver(char const*) (in main3d.gnu.MPI.ex) (main_driver.cpp:0)
+ 6: LBM_timestep(amrex::Geometry const&, amrex::MultiFab&, amrex::MultiFab&, amrex::MultiFab&, amrex::MultiFab&, amrex::MultiFab&, amrex::MultiFab&, amrex::MultiFab&, amrex::MultiFab&) (in main3d.gnu.MPI.ex) (LBM_binary.H:595)
 
- 7: main (in main3d.gnu.MPI.ex) (main.cpp:25)
+ 7: main_driver(char const*) (in main3d.gnu.MPI.ex) (main_driver.cpp:0)
 
- 8: start (in dyld) + 1942
+ 8: main (in main3d.gnu.MPI.ex) (main.cpp:25)
+
+ 9: start (in dyld) + 1942
 

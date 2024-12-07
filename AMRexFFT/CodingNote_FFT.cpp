@@ -7,6 +7,15 @@
 
 using namespace amrex;
 
+
+int main(int argc, char* argv[]){
+    amrex::Initialize(argc, argv);
+    int n_cell_x;
+    int n_cell_y;
+    int n_cell_z;
+}
+
+/*
 int main (int argc, char* argv[])
 {
     amrex::Initialize(argc, argv); {
@@ -186,4 +195,4 @@ int main (int argc, char* argv[])
     WriteSingleLevelPlotfile("plt_fft", phi_fft_realimag, {"phi_fft_real", "phi_fft_imag"}, cgeom, time, step);
 
     } amrex::Finalize();
-}
+}*/

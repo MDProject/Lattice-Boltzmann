@@ -104,6 +104,24 @@ inline void PrintMassConservation(MultiFab& hydrovs, Vector<std::string> Variabl
     }
 }
 
-//inline void PrintConvergence(MultiFab& hydrovs, int t_window, )
+/*  
+    amrex::MultiFabFileFullPrefix():    e.g., return "** /plt[nstep]/Level_[nlevel]/Cell"
+    plotfilename (e.g., "** /plt[nstep]") is assembled by function std::string amrex::Concatenate(const std::string& root, int num, int mindigits)
+    (returns rootNNNN where NNNN == num) using input "plot_file_root"
+    This function calculates the p-norm of the density variations (ensemble average mean substracted) matrix from [step1] ~ [step2].
+    const amrex::BoxArray& ba = mf.boxArray(); 
+*/		
+inline void PrintConvergence(std::string plot_file_root, int step1, int step2, int nsteps, int compIdx=0, int nlevel=0, int mindigits=5,
+             const std::string &levelPrefix="Level_", const std::string &mfPrefix="Cell"){
+    int step_intval = (step2 - step1)/(nsteps-1);
+    Print() << "Convergence test emsemble selection: from step " << step1 << " to step " << step2 << " with step interval " << step_intval << '\n';
+    for(int n=step1; n<=step2; n=n+step_intval){
+        const std::string& checkpointname = amrex::Concatenate(plot_file_root,n,mindigits);
+        //VisMF::Read((*hydrovs_readin_ptr), amrex::MultiFabFileFullPrefix(nlevel, checkpointname, levelPrefix, mfPrefix));
+    }
+
+}
+
+
 
 #endif

@@ -6,8 +6,9 @@ tmp_build_dir/o/3d.gnu.MPI.EXE/AMReX_iMultiFab.o: \
   ../../amrex/Src/Base/AMReX_GpuQualifiers.H \
   ../../amrex/Src/Base/AMReX_GpuPrint.H \
   ../../amrex/Src/Base/AMReX_GpuAssert.H \
-  ../../amrex/Src/Base/AMReX_ccse-mpi.H /usr/local/include/mpi.h \
-  /usr/local/include/mpi_portable_platform.h \
+  ../../amrex/Src/Base/AMReX_ccse-mpi.H \
+  /usr/local/Cellar/open-mpi/5.0.5/include/mpi.h \
+  /usr/local/Cellar/open-mpi/5.0.5/include/mpi_portable_platform.h \
   ../../amrex/Src/Base/AMReX_Exception.H \
   ../../amrex/Src/Base/AMReX_Extension.H \
   ../../amrex/Src/Base/AMReX_iMultiFab.H \
@@ -21,9 +22,14 @@ tmp_build_dir/o/3d.gnu.MPI.EXE/AMReX_iMultiFab.o: \
   ../../amrex/Src/Base/AMReX_GpuControl.H \
   ../../amrex/Src/Base/AMReX_GpuTypes.H \
   ../../amrex/Src/Base/AMReX_SPACE.H \
+  ../../amrex/Src/Base/AMReX_SmallMatrix.H \
+  ../../amrex/Src/Base/AMReX_ConstexprFor.H \
   ../../amrex/Src/Base/AMReX_IntVect.H \
   ../../amrex/Src/Base/AMReX_Vector.H \
   ../../amrex/Src/Base/AMReX_TypeTraits.H \
+  ../../amrex/Src/Base/AMReX_Tuple.H \
+  ../../amrex/Src/Base/AMReX_Functional.H \
+  ../../amrex/Src/Base/AMReX_TypeList.H \
   ../../amrex/Src/Base/AMReX_IndexType.H \
   ../../amrex/Src/Base/AMReX_Orientation.H \
   ../../amrex/Src/Base/AMReX_Array4.H \
@@ -38,6 +44,7 @@ tmp_build_dir/o/3d.gnu.MPI.EXE/AMReX_iMultiFab.o: \
   ../../amrex/Src/Base/AMReX_MakeType.H \
   ../../amrex/Src/Base/AMReX_Utility.H \
   ../../amrex/Src/Base/AMReX_BoxArray.H \
+  ../../amrex/Src/Base/AMReX_Periodicity.H \
   ../../amrex/Src/Base/AMReX_Demangle.H \
   ../../amrex/Src/Base/AMReX_DistributionMapping.H \
   ../../amrex/Src/Base/AMReX_ParallelDescriptor.H \
@@ -48,6 +55,7 @@ tmp_build_dir/o/3d.gnu.MPI.EXE/AMReX_iMultiFab.o: \
   ../../amrex/Src/Base/AMReX_Random.H \
   ../../amrex/Src/Base/AMReX_RandomEngine.H \
   ../../amrex/Src/Base/AMReX_FileSystem.H \
+  ../../amrex/Src/Base/AMReX_String.H \
   ../../amrex/Src/Base/AMReX_Reduce.H ../../amrex/Src/Base/AMReX_Gpu.H \
   ../../amrex/Src/Base/AMReX_GpuKernelInfo.H \
   ../../amrex/Src/Base/AMReX_GpuLaunch.H \
@@ -58,10 +66,7 @@ tmp_build_dir/o/3d.gnu.MPI.EXE/AMReX_iMultiFab.o: \
   ../../amrex/Src/Base/AMReX_GpuMemory.H \
   ../../amrex/Src/Base/AMReX_GpuReduce.H \
   ../../amrex/Src/Base/AMReX_GpuAtomic.H \
-  ../../amrex/Src/Base/AMReX_Functional.H \
   ../../amrex/Src/Base/AMReX_GpuUtility.H \
-  ../../amrex/Src/Base/AMReX_Tuple.H \
-  ../../amrex/Src/Base/AMReX_TypeList.H \
   ../../amrex/Src/Base/AMReX_GpuLaunchGlobal.H \
   ../../amrex/Src/Base/AMReX_GpuLaunchMacrosC.H \
   ../../amrex/Src/Base/AMReX_GpuLaunchMacrosC.nolint.H \
@@ -76,12 +81,12 @@ tmp_build_dir/o/3d.gnu.MPI.EXE/AMReX_iMultiFab.o: \
   ../../amrex/Src/Base/AMReX_ANSIEscCode.H \
   ../../amrex/Src/Base/AMReX_GpuContainers.H \
   ../../amrex/Src/Base/AMReX_PODVector.H \
+  ../../amrex/Src/Base/AMReX_MemPool.H \
   ../../amrex/Src/Base/AMReX_CudaGraph.H \
   ../../amrex/Src/Base/AMReX_MFIter.H \
   ../../amrex/Src/Base/AMReX_FabArrayBase.H \
   ../../amrex/Src/Base/AMReX_ParallelReduce.H \
-  ../../amrex/Src/Base/AMReX_Periodicity.H \
-  ../../amrex/Src/Base/AMReX_Scan.H ../../amrex/Src/Base/AMReX_MemPool.H \
+  ../../amrex/Src/Base/AMReX_Scan.H \
   ../../amrex/Src/Base/AMReX_FabArray.H \
   ../../amrex/Src/Base/AMReX_BoxDomain.H \
   ../../amrex/Src/Base/AMReX_FabFactory.H \
@@ -107,8 +112,7 @@ tmp_build_dir/o/3d.gnu.MPI.EXE/AMReX_iMultiFab.o: \
   ../../amrex/Src/Base/AMReX_MultiFabUtil_C.H \
   ../../amrex/Src/Base/AMReX_MultiFabUtil_nd_C.H \
   ../../amrex/Src/Base/AMReX_MultiFabUtil_3D_C.H \
-  ../../amrex/Src/Base/AMReX_MultiFabUtilI.H \
-  ../../amrex/Src/Base/AMReX_ParmParse.H
+  ../../amrex/Src/Base/AMReX_MultiFabUtilI.H
 
 ../../amrex/Src/Base/AMReX_BLassert.H:
 
@@ -124,9 +128,9 @@ tmp_build_dir/s/3d.gnu.MPI.EXE/AMReX_Config.H:
 
 ../../amrex/Src/Base/AMReX_ccse-mpi.H:
 
-/usr/local/include/mpi.h:
+/usr/local/Cellar/open-mpi/5.0.5/include/mpi.h:
 
-/usr/local/include/mpi_portable_platform.h:
+/usr/local/Cellar/open-mpi/5.0.5/include/mpi_portable_platform.h:
 
 ../../amrex/Src/Base/AMReX_Exception.H:
 
@@ -158,11 +162,21 @@ tmp_build_dir/s/3d.gnu.MPI.EXE/AMReX_Config.H:
 
 ../../amrex/Src/Base/AMReX_SPACE.H:
 
+../../amrex/Src/Base/AMReX_SmallMatrix.H:
+
+../../amrex/Src/Base/AMReX_ConstexprFor.H:
+
 ../../amrex/Src/Base/AMReX_IntVect.H:
 
 ../../amrex/Src/Base/AMReX_Vector.H:
 
 ../../amrex/Src/Base/AMReX_TypeTraits.H:
+
+../../amrex/Src/Base/AMReX_Tuple.H:
+
+../../amrex/Src/Base/AMReX_Functional.H:
+
+../../amrex/Src/Base/AMReX_TypeList.H:
 
 ../../amrex/Src/Base/AMReX_IndexType.H:
 
@@ -196,6 +210,8 @@ tmp_build_dir/s/3d.gnu.MPI.EXE/AMReX_Config.H:
 
 ../../amrex/Src/Base/AMReX_BoxArray.H:
 
+../../amrex/Src/Base/AMReX_Periodicity.H:
+
 ../../amrex/Src/Base/AMReX_Demangle.H:
 
 ../../amrex/Src/Base/AMReX_DistributionMapping.H:
@@ -215,6 +231,8 @@ tmp_build_dir/s/3d.gnu.MPI.EXE/AMReX_Config.H:
 ../../amrex/Src/Base/AMReX_RandomEngine.H:
 
 ../../amrex/Src/Base/AMReX_FileSystem.H:
+
+../../amrex/Src/Base/AMReX_String.H:
 
 ../../amrex/Src/Base/AMReX_Reduce.H:
 
@@ -238,13 +256,7 @@ tmp_build_dir/s/3d.gnu.MPI.EXE/AMReX_Config.H:
 
 ../../amrex/Src/Base/AMReX_GpuAtomic.H:
 
-../../amrex/Src/Base/AMReX_Functional.H:
-
 ../../amrex/Src/Base/AMReX_GpuUtility.H:
-
-../../amrex/Src/Base/AMReX_Tuple.H:
-
-../../amrex/Src/Base/AMReX_TypeList.H:
 
 ../../amrex/Src/Base/AMReX_GpuLaunchGlobal.H:
 
@@ -274,6 +286,8 @@ tmp_build_dir/s/3d.gnu.MPI.EXE/AMReX_Config.H:
 
 ../../amrex/Src/Base/AMReX_PODVector.H:
 
+../../amrex/Src/Base/AMReX_MemPool.H:
+
 ../../amrex/Src/Base/AMReX_CudaGraph.H:
 
 ../../amrex/Src/Base/AMReX_MFIter.H:
@@ -282,11 +296,7 @@ tmp_build_dir/s/3d.gnu.MPI.EXE/AMReX_Config.H:
 
 ../../amrex/Src/Base/AMReX_ParallelReduce.H:
 
-../../amrex/Src/Base/AMReX_Periodicity.H:
-
 ../../amrex/Src/Base/AMReX_Scan.H:
-
-../../amrex/Src/Base/AMReX_MemPool.H:
 
 ../../amrex/Src/Base/AMReX_FabArray.H:
 
@@ -341,5 +351,3 @@ tmp_build_dir/s/3d.gnu.MPI.EXE/AMReX_Config.H:
 ../../amrex/Src/Base/AMReX_MultiFabUtil_3D_C.H:
 
 ../../amrex/Src/Base/AMReX_MultiFabUtilI.H:
-
-../../amrex/Src/Base/AMReX_ParmParse.H:

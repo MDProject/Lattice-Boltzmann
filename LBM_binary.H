@@ -51,11 +51,11 @@ inline void thermal_noise(MultiFab& fnoisevs, MultiFab& gnoisevs, MultiFab& hydr
     fnoise[nbx](x,y,z,0) = 0.;
     gnoise[nbx](x,y,z,0) = 0.;
     for (int a=1; a<=AMREX_SPACEDIM; a++) {
-      fnoise[nbx](x,y,z,a) = sqrt(2.*(tau_f_bar - tau_f_bar2)*kBT*std::abs(rho*phi)/rhot)*draw_from_pdf_normal(0., 1.);
+      fnoise[nbx](x,y,z,a) = sqrt(2.*(tau_f_bar - tau_f_bar2)*kBT*std::abs(rho*phi/rhot))*draw_from_pdf_normal(0., 1.);
       gnoise[nbx](x,y,z,a) = -fnoise[nbx](x,y,z,a);
-      /*if(std::isnan(gnoise[nbx](x,y,z,a))){
+      if(rhot<0||std::isnan(gnoise[nbx](x,y,z,a))){
         Print() << "thermal_noise(1~3): " << gnoise[nbx](x,y,z,a) << "rho,phi,rtot" << rho << ',' << phi << ',' << rhot << "-*-";
-      }*/
+      }
     }
     for (int a=AMREX_SPACEDIM+1; a<nvel; a++) {
       fnoise[nbx](x,y,z,a) = sqrt(2.*(tau_f_bar - tau_f_bar2)*kBT/cs2*b[a]*std::abs(rho))*draw_from_pdf_normal(0., 1.);
@@ -564,7 +564,7 @@ inline void LBM_timestep(const Geometry& geom,
 			 MultiFab& hydrovs, MultiFab& hydrovsbar,
        MultiFab& fnoisevs, MultiFab& gnoisevs) {
   fold.FillBoundary(geom.periodicity());
-  gold.FillBoundary(geom.periodicity());  /*  inner boundary ?? different boxes */
+  gold.FillBoundary(geom.periodicity());  // MUST fullfil the periodic boundary condition at EACH STEP !!!
   hydrovs.FillBoundary(geom.periodicity());
   auto const & fOld = fold.arrays();
   auto const & gOld = gold.arrays();

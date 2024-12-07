@@ -30,6 +30,7 @@ VPATH_LOCATIONS   += $(FHDEX_HOME)/src_analysis/
 INCLUDE_LOCATIONS += $(FHDEX_HOME)/src_analysis/
 
 include $(AMREX_HOME)/Src/Base/Make.package
+#include $(AMREX_HOME)/Src/FFT/Make.package
 
 include $(AMREX_HOME)/Tools/GNUMake/Make.rules
 

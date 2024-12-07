@@ -11,14 +11,14 @@ using namespace amrex;
 #include "Debug.H"
 #include "AMReX_FileIO.H"
 
-const bool tagHDF5 = false;
+const bool tagHDF5 = false; 
 
 inline void WriteOutput(int step,
 			const MultiFab& hydrovs,
 			const Vector<std::string>& var_names,
 			const Geometry& geom, bool tagHDF5 = false) {
   const Real time = step;
-  const std::string& pltfile = amrex::Concatenate("./lbm_data_shshan_alpha0_4_xi_0/plt",step,5);
+  const std::string& pltfile = amrex::Concatenate("./lbm_data_shshan_alpha0_4_xi_1e-30/plt",step,5);
 
   /*if(!filesystem::exists(pltfile)){
     if (mkdir(pltfile.c_str(), S_IRWXU | S_IRWXG | S_IROTH | S_IXOTH) == 0 && step < 10 ){    // -1 for unsuccessful;
@@ -104,7 +104,7 @@ void main_driver(const char* argv) {
   int max_grid_size = 8;
 
   // default time stepping parameters
-  int nsteps = 300;
+  int nsteps = 1;//300;
   int plot_int = 10;
 
   // default droplet radius (% of box size)
@@ -139,7 +139,7 @@ void main_driver(const char* argv) {
   DistributionMapping dm(ba);
 
   // need two halo layers for gradients
-  int nghost = 3; //2;
+  int nghost = 2; //2;
 
   // number of hydrodynamic fields to output
   int nhydro = 15; //6; 
@@ -158,6 +158,7 @@ void main_driver(const char* argv) {
   // set up variable names for output
   const Vector<std::string> var_names = VariableNames(nhydro);
 
+  
   // INITIALIZE
   LBM_init_droplet(radius, geom, fold, gold, hydrovs, hydrovsbar, fnoisevs, gnoisevs);
   MultiFabNANCheck(hydrovs, true, 0);
@@ -166,6 +167,7 @@ void main_driver(const char* argv) {
     WriteOutput(0, hydrovs, var_names, geom);
   Print() << "LB initialized\n";
 
+  
   // TIMESTEP
   for (int step=1; step <= nsteps; ++step) {
     LBM_timestep(geom, fold, gold, fnew, gnew, hydrovs, hydrovsbar, fnoisevs, gnoisevs);
@@ -186,6 +188,10 @@ void main_driver(const char* argv) {
 
   amrex::Print() << "Run time = " << stop_time << std::endl;
   
+
+  
+  
+
 }
 
 
@@ -204,3 +210,62 @@ volpack.h files directory needs to be included in makefile
     g1.push_back(i);
   SliceWriteToPlainText(g1, ".", "test.dat");
 }*/
+
+/*
+  ******************  MultiFab related operations *******************
+  // Read in last N output files
+  MultiFab** vec_mfp = new MultiFab*[20];
+  //MultiFab* vec_mfobj = new MultiFab[20]; see below, operator = overload is deleted;
+  for(int n=0; n<10; n++){
+    MultiFab* hydrovs_readin_ptr = new MultiFab(ba, dm, nvel, nghost);
+    //MultiFab hydrovs_readin(ba, dm, nhydro, nghost);
+    const std::string& checkpointname = amrex::Concatenate("./lbm_data_shshan_alpha0_4_xi_0/plt",200+10*n,5);
+    VisMF::Read((*hydrovs_readin_ptr), amrex::MultiFabFileFullPrefix(0, checkpointname, "Level_", "Cell"));
+    vec_mfp[n] = hydrovs_readin_ptr;
+
+    /*  overload resolution selected deleted operator '=' so this CANNOT work
+    MultiFab hydrovs_readin_obj(ba, dm, nvel, nghost);
+    VisMF::Read(hydrovs_readin_obj, amrex::MultiFabFileFullPrefix(0, checkpointname, "Level_", "Cell"));
+    vec_mfobj[n] = hydrovs_readin_obj;
+
+    for (MFIter mfi((*hydrovs_readin_ptr)); mfi.isValid(); ++mfi) {
+      const Box& valid_box = mfi.validbox();
+
+      // Access the FArrayBox corresponding to the current box
+      const FArrayBox& fab = (*hydrovs_readin_ptr)[mfi];
+
+      // Create a new FArrayBox to hold the extracted component
+      FArrayBox extracted_component(valid_box, 1); // One component only
+
+      // Copy the desired component from the original FArrayBox
+      extracted_component.copy(fab, valid_box, 0, valid_box, 0, 1); // srcfab, srcbox, srccomp, destbox, destcomp, numcomp
+      /*Note that although the srcbox and the destbox may be disjoint, they must be the same size and shape.
+      If the sizes differ, the copy is undefined and a runtime error results.
+      // Do something with the extracted component (e.g., print or process)
+      std::cout << "Extracted component " << 0 << " for box " << valid_box << std::endl;
+    }
+  }
+  // print multifab stored in MultiFab array [vec_mfp]
+  for(int n=0; n<10; n++){
+    auto const & mfab_multi_array4D = (*vec_mfp[n]).arrays();
+    ParallelFor((*vec_mfp[n]), IntVect(0), [&] AMREX_GPU_DEVICE(int nbx, int x, int y, int z) {
+        if(x==0&&y==0&&z==0){
+          Print() << mfab_multi_array4D[nbx](x,y,z,5) << "  ";
+        }
+    });
+  }
+
+  // extract single component from MultiFab A to a new MultiFab B;
+  // construct new MultiFab [testfunc_new] of total 1 component with same BoxArray, DistributionMapping and ghost layers;
+  MultiFab mfab_rho(vec_mfp[0]->boxArray(), vec_mfp[0]->DistributionMap(), 10, vec_mfp[0]->nGrow());
+  Print() << mfab_rho.nGrow() << '\n';
+  mfab_rho.copy((*vec_mfp[0]), 5, 0, 1);   // copy the 5th component of [*vec_mfp[0]] to [mfab_rho]'s 0th component, with total num of comps=1;
+  auto const & mfab_rho_array = mfab_rho.arrays();
+  auto const & mfab_multi_array4D = (*vec_mfp[0]).arrays();
+  // mfab_rho.FillBoundary(geom.periodicity());  // copy() does not deal with the periodic boundary condition; need to fill boundary condition again!!
+  ParallelFor(mfab_rho, IntVect(0), [=] AMREX_GPU_DEVICE(int nbx, int x, int y, int z) {
+    Print() << '(' << nbx << "," << x << ',' << y << ',' << z << ")-(" << mfab_rho_array[nbx](x,y,z,0) 
+    << ',' << mfab_multi_array4D[nbx](x,y,z,5) << ')' << '\t';
+  }); 
+
+*/
