@@ -108,17 +108,62 @@ inline void PrintMassConservation(MultiFab& hydrovs, Vector<std::string> Variabl
     amrex::MultiFabFileFullPrefix():    e.g., return "** /plt[nstep]/Level_[nlevel]/Cell"
     plotfilename (e.g., "** /plt[nstep]") is assembled by function std::string amrex::Concatenate(const std::string& root, int num, int mindigits)
     (returns rootNNNN where NNNN == num) using input "plot_file_root"
-    This function calculates the p-norm of the density variations (ensemble average mean substracted) matrix from [step1] ~ [step2].
+    This function calculates the p-norm of the density variations (ensemble average mean substracted) matrix from [step1] ~ [step2] (both included).
     const amrex::BoxArray& ba = mf.boxArray(); 
 */		
-inline void PrintConvergence(std::string plot_file_root, int step1, int step2, int nsteps, int compIdx=0, int nlevel=0, int mindigits=5,
+inline void PrintConvergence(std::string plot_file_root, int step1, int step2, int step_int, const MultiFab& mfab_ref, int compIdx=0, int p_tag=1, int nlevel=0, int mindigits=5,
              const std::string &levelPrefix="Level_", const std::string &mfPrefix="Cell"){
-    int step_intval = (step2 - step1)/(nsteps-1);
-    Print() << "Convergence test emsemble selection: from step " << step1 << " to step " << step2 << " with step interval " << step_intval << '\n';
-    for(int n=step1; n<=step2; n=n+step_intval){
-        const std::string& checkpointname = amrex::Concatenate(plot_file_root,n,mindigits);
-        //VisMF::Read((*hydrovs_readin_ptr), amrex::MultiFabFileFullPrefix(nlevel, checkpointname, levelPrefix, mfPrefix));
+    Print() << "Convergence test emsemble selection: from step " << step1 << " to step " << step2 << " with step interval " << step_int << '\n';
+    int Nsteps = (step2 - step1)/step_int + 1;
+    MultiFab** hydrovs_readin_array = new MultiFab*[Nsteps];    // arrays of hydrovs MultiFab pointers, used for storing read-in multifabs ensemble
+
+    MultiFab hydrovs_mean(mfab_ref.boxArray(), mfab_ref.DistributionMap(), 1, mfab_ref.nGrow());
+    hydrovs_mean.setVal(0., 0, 1); // set values 0. from comp 0, total 1 component;
+    auto const & hydrovs_mean_array4D = hydrovs_mean.arrays();
+    for(int n=0; n<Nsteps; n++){
+        int nstep = step1 + step_int*n;
+        hydrovs_readin_array[n] = new MultiFab(mfab_ref.boxArray(), mfab_ref.DistributionMap(), 1, mfab_ref.nGrow());
+        const std::string& checkpointname = amrex::Concatenate(plot_file_root,nstep,mindigits);
+        VisMF::Read((*(hydrovs_readin_array[n])), amrex::MultiFabFileFullPrefix(nlevel, checkpointname, levelPrefix, mfPrefix));
+        auto const & hydrovs_readin_ptr_array4D = hydrovs_readin_array[n]->arrays();
+        // calculate the mean multifab for given component index [compIdx]
+        ParallelFor((*(hydrovs_readin_array[n])), IntVect(0), [=] AMREX_GPU_DEVICE(int nbx, int x, int y, int z) {
+            hydrovs_mean_array4D[nbx](x,y,z,0) = hydrovs_mean_array4D[nbx](x,y,z,0) + hydrovs_readin_ptr_array4D[nbx](x,y,z,compIdx);
+        });
     }
+    hydrovs_mean.mult(1./Nsteps, 0, 1, 0);  // multilication for component 0, total 1 components with 0 ghost layer;
+
+    // calculate the p-residues (p=1 or \infty) for ensemble MultiFabs stored in array [hydrovs_readin_array];
+    // Here mfab data are considered as reshaped vectors;
+    // ||A||_1: 1/N*\sum |aijk| and ||A||_\infty: max_{ijk} |aijk|
+    MultiFab hydrovs_deviation(mfab_ref.boxArray(), mfab_ref.DistributionMap(), 1, mfab_ref.nGrow());
+    hydrovs_deviation.setVal(0.,0,1);
+    auto const & hydrovs_deviation_array4D = hydrovs_deviation.arrays();
+
+    for(int n=0; n<Nsteps; n++){
+        ParallelFor((*(hydrovs_readin_array[n])), IntVect(0), [=] AMREX_GPU_DEVICE(int nbx, int x, int y, int z) {
+            auto const & hydrovs_readin_ptr_array4D = hydrovs_readin_array[n]->arrays();
+            hydrovs_deviation_array4D[nbx](x,y,z,0) = hydrovs_deviation_array4D[nbx](x,y,z,0)
+                    + std::abs(hydrovs_readin_ptr_array4D[nbx](x,y,z,compIdx) - hydrovs_mean_array4D[nbx](x,y,z,0));  // for given component index [compIdx]
+        });
+    }
+    hydrovs_deviation.mult(1./Nsteps);
+
+    const BoxArray& ba = mfab_ref.boxArray();
+    Box domain_box = ba.minimalBox();
+    IntVect total_size = domain_box.size();
+    switch(p_tag) {
+        case 1:
+            Print() << hydrovs_deviation.sum()/(total_size[0]*total_size[1]*total_size[2]) << '\n';
+            break;
+        case -1:    // for p=\infty
+            Print() << hydrovs_deviation.max(0) << '\n';    // maximum value for component 0;
+            break;
+    }
+    /*for(int n=0; n<Nsteps; n++){
+        delete[] hydrovs_readin_array[n]; 
+    }*/
+    delete[] hydrovs_readin_array;
 
 }
 

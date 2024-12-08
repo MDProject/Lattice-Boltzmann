@@ -12,13 +12,14 @@ using namespace amrex;
 #include "AMReX_FileIO.H"
 
 const bool tagHDF5 = false; 
+string plot_file_root = "./lbm_data_shshan_alpha0_4_xi_0/plt";
 
 inline void WriteOutput(int step,
 			const MultiFab& hydrovs,
 			const Vector<std::string>& var_names,
 			const Geometry& geom, bool tagHDF5 = false) {
   const Real time = step;
-  const std::string& pltfile = amrex::Concatenate("./lbm_data_shshan_alpha0_4_xi_1e-30/plt",step,5);
+  const std::string& pltfile = amrex::Concatenate(plot_file_root,step,5);
 
   /*if(!filesystem::exists(pltfile)){
     if (mkdir(pltfile.c_str(), S_IRWXU | S_IRWXG | S_IROTH | S_IXOTH) == 0 && step < 10 ){    // -1 for unsuccessful;
@@ -188,8 +189,9 @@ void main_driver(const char* argv) {
 
   amrex::Print() << "Run time = " << stop_time << std::endl;
   
-
-  
+  PrintConvergence(plot_file_root, 200, 300, plot_int, hydrovs, 0, 1);
+  PrintConvergence(plot_file_root, 200, 300, plot_int, hydrovs, 1, 1);
+  PrintConvergence(plot_file_root, 200, 300, plot_int, hydrovs, 5, 1);
   
 
 }
@@ -211,13 +213,19 @@ volpack.h files directory needs to be included in makefile
   SliceWriteToPlainText(g1, ".", "test.dat");
 }*/
 
-/*
+/***************
   ******************  MultiFab related operations *******************
+  
   // Read in last N output files
   MultiFab** vec_mfp = new MultiFab*[20];
   //MultiFab* vec_mfobj = new MultiFab[20]; see below, operator = overload is deleted;
   for(int n=0; n<10; n++){
     MultiFab* hydrovs_readin_ptr = new MultiFab(ba, dm, nvel, nghost);
+    for (MFIter mfi((*hydrovs_readin_ptr)); mfi.isValid(); ++mfi) {
+        Print() << (*hydrovs_readin_ptr)[mfi].box() << '\n';  // including ghost layers
+        Print() << mfi.tilebox() << '\n';   // excluding ghost layers
+        Print() << mfi.validbox() << '\n';  // excluding ghost layers
+    }
     //MultiFab hydrovs_readin(ba, dm, nhydro, nghost);
     const std::string& checkpointname = amrex::Concatenate("./lbm_data_shshan_alpha0_4_xi_0/plt",200+10*n,5);
     VisMF::Read((*hydrovs_readin_ptr), amrex::MultiFabFileFullPrefix(0, checkpointname, "Level_", "Cell"));
@@ -226,11 +234,15 @@ volpack.h files directory needs to be included in makefile
     /*  overload resolution selected deleted operator '=' so this CANNOT work
     MultiFab hydrovs_readin_obj(ba, dm, nvel, nghost);
     VisMF::Read(hydrovs_readin_obj, amrex::MultiFabFileFullPrefix(0, checkpointname, "Level_", "Cell"));
-    vec_mfobj[n] = hydrovs_readin_obj;
+    vec_mfobj[n] = hydrovs_readin_obj;***************/
 
+    /****************
     for (MFIter mfi((*hydrovs_readin_ptr)); mfi.isValid(); ++mfi) {
-      const Box& valid_box = mfi.validbox();
+      const Box& valid_box = mfi.validbox();  // It excludes any regions added due to ghost cells or other boundary extensions.
 
+      Print() << mfi.tilebox() << '\n'; // excluding ghost layers
+      Print() << mfi.validbox() << '\n';  // excluding ghost layers
+      Print() << (*hydrovs_readin_ptr)[mfi].box() << '\n';  // excluding ghost layers?? why
       // Access the FArrayBox corresponding to the current box
       const FArrayBox& fab = (*hydrovs_readin_ptr)[mfi];
 
@@ -242,9 +254,11 @@ volpack.h files directory needs to be included in makefile
       /*Note that although the srcbox and the destbox may be disjoint, they must be the same size and shape.
       If the sizes differ, the copy is undefined and a runtime error results.
       // Do something with the extracted component (e.g., print or process)
-      std::cout << "Extracted component " << 0 << " for box " << valid_box << std::endl;
+      // std::cout << "Extracted component " << 0 << " for box " << valid_box << std::endl;
     }
-  }
+  }***************/
+
+  /****************
   // print multifab stored in MultiFab array [vec_mfp]
   for(int n=0; n<10; n++){
     auto const & mfab_multi_array4D = (*vec_mfp[n]).arrays();
@@ -267,5 +281,4 @@ volpack.h files directory needs to be included in makefile
     Print() << '(' << nbx << "," << x << ',' << y << ',' << z << ")-(" << mfab_rho_array[nbx](x,y,z,0) 
     << ',' << mfab_multi_array4D[nbx](x,y,z,5) << ')' << '\t';
   }); 
-
-*/
+  *******************/

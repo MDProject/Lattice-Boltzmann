@@ -4,15 +4,17 @@
 
  2: _sigtramp (in libsystem_platform.dylib) + 29
 
- 4: thermal_noise(amrex::MultiFab&, amrex::MultiFab&, amrex::MultiFab&)::'lambda'(int, int, int, int)::operator()(int, int, int, int) const (in main3d.gnu.MPI.ex) (LBM_binary.H:61)
+ 4: abort (in libsystem_c.dylib) + 126
 
- 5: std::__1::enable_if<IsFabArray<amrex::MultiFab>::value, void>::type amrex::experimental::detail::ParallelFor<amrex::MultiFab, thermal_noise(amrex::MultiFab&, amrex::MultiFab&, amrex::MultiFab&)::'lambda'(int, int, int, int)>(amrex::MultiFab const&, amrex::IntVectND<3> const&, amrex::IntVectND<3> const&, bool, thermal_noise(amrex::MultiFab&, amrex::MultiFab&, amrex::MultiFab&)::'lambda'(int, int, int, int) const&) (in main3d.gnu.MPI.ex) (AMReX_MFParallelForC.H:26)
+ 5: malloc_vreport (in libsystem_malloc.dylib) + 857
 
- 6: LBM_timestep(amrex::Geometry const&, amrex::MultiFab&, amrex::MultiFab&, amrex::MultiFab&, amrex::MultiFab&, amrex::MultiFab&, amrex::MultiFab&, amrex::MultiFab&, amrex::MultiFab&) (in main3d.gnu.MPI.ex) (LBM_binary.H:595)
+ 6: malloc_report (in libsystem_malloc.dylib) + 151
 
- 7: main_driver(char const*) (in main3d.gnu.MPI.ex) (main_driver.cpp:0)
+ 7: PrintConvergence(std::__1::basic_string<char, std::__1::char_traits<char>, std::__1::allocator<char>>, int, int, int, amrex::MultiFab const&, int, int, int, int, std::__1::basic_string<char, std::__1::char_traits<char>, std::__1::allocator<char>> const&, std::__1::basic_string<char, std::__1::char_traits<char>, std::__1::allocator<char>> const&) (in main3d.gnu.MPI.ex) (Debug.H:163)
 
- 8: main (in main3d.gnu.MPI.ex) (main.cpp:25)
+ 8: main_driver(char const*) (in main3d.gnu.MPI.ex) (main_driver.cpp:192)
 
- 9: start (in dyld) + 1942
+ 9: main (in main3d.gnu.MPI.ex) (main.cpp:25)
+
+10: start (in dyld) + 1942
 
