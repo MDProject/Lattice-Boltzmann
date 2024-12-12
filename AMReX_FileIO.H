@@ -443,6 +443,22 @@ void ReadMultiFabFromPlainText(char c_dim, MultiFab& mfab,// can only use the re
     
 }
 
+/*
+    [filename]: directory of the folder which contains: folder $levelPrefix_$nlevel (e.g., Level_0) and Header file;
+    Load single MultiFab variable from disk to [mfab_rho];
+*/
+bool LoadSingleMultiFab(std::string filename, MultiFab& mfab_in, int nlevel=0,
+    const std::string &levelPrefix="Level_", const std::string &mfPrefix="Cell"){
+    if(!filesystem::exists(filename)){
+        Print() << "Cannot load in MultiFab " << filename << '\n';
+        return false;
+    }else{
+        VisMF::Read(mfab_in, amrex::MultiFabFileFullPrefix(nlevel, filename, levelPrefix, mfPrefix));
+        Print() << "Load in MultiFab " << filename << " successfully\n";
+        return true;
+    }
+}
+
 
 
 /*

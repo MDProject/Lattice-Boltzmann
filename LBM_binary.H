@@ -36,18 +36,22 @@ Real pressure(Real rho, Real phi) {
 }
 
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
-inline void thermal_noise(MultiFab& fnoisevs, MultiFab& gnoisevs, MultiFab& hydrovsbar){
+inline void thermal_noise(MultiFab& fnoisevs, MultiFab& gnoisevs,
+  MultiFab& rho_eqvs, MultiFab& phi_eqvs, MultiFab& rhot_eqvs){ // additional 3 equilibrium state
   auto const & fnoise = fnoisevs.arrays();
   auto const & gnoise = gnoisevs.arrays();
-  auto const & hydrobar = hydrovsbar.arrays();
+  //auto const & hydrobar = hydrovsbar.arrays();
+  auto const & rho_eq = rho_eqvs.arrays();
+  auto const & phi_eq = phi_eqvs.arrays();
+  auto const & rhot_eq = rhot_eqvs.arrays();
   const Real tau_f_bar = 1./(tau_f+0.5);
   const Real tau_g_bar = tau_f_bar;
   const Real tau_f_bar2 = tau_f_bar*tau_f_bar;
   const Real tau_g_bar2 = tau_g_bar*tau_g_bar;
   ParallelFor(fnoisevs, IntVect(0), [=] AMREX_GPU_DEVICE(int nbx, int x, int y, int z) { // IntVect(0): no ghost cells when loop over the grid sites;
-    Real rho = hydrobar[nbx](x, y, z, 0);
-    Real phi = hydrobar[nbx](x, y, z, 1);
-    Real rhot = rho + phi;  // equilibrium density???
+    Real rho = rho_eq[nbx](x, y, z, 0);
+    Real phi = phi_eq[nbx](x, y, z, 0);
+    Real rhot = rhot_eq[nbx](x, y, z, 0);  // equilibrium density
     fnoise[nbx](x,y,z,0) = 0.;
     gnoise[nbx](x,y,z,0) = 0.;
     for (int a=1; a<=AMREX_SPACEDIM; a++) {
@@ -60,9 +64,12 @@ inline void thermal_noise(MultiFab& fnoisevs, MultiFab& gnoisevs, MultiFab& hydr
     for (int a=AMREX_SPACEDIM+1; a<nvel; a++) {
       fnoise[nbx](x,y,z,a) = sqrt(2.*(tau_f_bar - tau_f_bar2)*kBT/cs2*b[a]*std::abs(rho))*draw_from_pdf_normal(0., 1.);
       gnoise[nbx](x,y,z,a) = sqrt(2.*(tau_g_bar - tau_g_bar2)*kBT/cs2*b[a]*std::abs(phi))*draw_from_pdf_normal(0., 1.);
-      /*if(std::isnan(gnoise[nbx](x,y,z,a))){
+      if(std::isnan(gnoise[nbx](x,y,z,a))){
         Print() << "thermal_noise(n>=4): " << gnoise[nbx](x,y,z,a) << "-*-";
-      }*/
+      }
+      if(std::isnan(fnoise[nbx](x,y,z,a))){
+        Print() << "thermal_noise(n>=4): " << fnoise[nbx](x,y,z,a) << "-*-";
+      }
     }
   });
 }
@@ -212,42 +219,63 @@ void hydrovars(int x, int y, int z, // real density & momentum;
   // next, update the modified quantiites to real quantities;
   h(x,y,z,0) = rho; // rho
   h(x,y,z,1) = phi;  // phi
-  // velocity of fluid f, nf[1~D] for x~z components
-  
-  // **********************   WITHOUT NOISE TERM   **********************;
-  h(x,y,z,2) = ufbar(0) + 0.5*afbar(0) - 0.5/(tau_f+0.5)*phi/(rho+phi)*(ufbar(0)-ugbar(0) + 0.5*(afbar(0)-agbar(0)));// + 0.5*nf(x,y,z,1)/rho; 
-  h(x,y,z,3) = ufbar(1) + 0.5*afbar(1) - 0.5/(tau_f+0.5)*phi/(rho+phi)*(ufbar(1)-ugbar(1) + 0.5*(afbar(1)-agbar(1)));// + 0.5*nf(x,y,z,2)/rho;
-  h(x,y,z,4) = ufbar(2) + 0.5*afbar(2) - 0.5/(tau_f+0.5)*phi/(rho+phi)*(ufbar(2)-ugbar(2) + 0.5*(afbar(2)-agbar(2)));// + 0.5*nf(x,y,z,3)/rho;
 
-  h(x,y,z,6) = ugbar(0) + 0.5*agbar(0) - 0.5/(tau_g+0.5)*rho/(rho+phi)*(ugbar(0)-ufbar(0) + 0.5*(agbar(0)-afbar(0)));// + 0.5*ng(x,y,z,1)/phi;
-  h(x,y,z,7) = ugbar(1) + 0.5*agbar(1) - 0.5/(tau_g+0.5)*rho/(rho+phi)*(ugbar(1)-ufbar(1) + 0.5*(agbar(1)-afbar(1)));// + 0.5*ng(x,y,z,2)/phi;
-  h(x,y,z,8) = ugbar(2) + 0.5*agbar(2) - 0.5/(tau_g+0.5)*rho/(rho+phi)*(ugbar(2)-ufbar(2) + 0.5*(agbar(2)-afbar(2)));// + 0.5*ng(x,y,z,3)/phi;*/
-  
-  /*if(rho>epsilon){
-    h(x,y,z,2) = ufbar(0) + 0.5*afbar(0) - 0.5/(tau_f+0.5)*phi/(rho+phi)*(ufbar(0)-ugbar(0) + 0.5*(afbar(0)-agbar(0))) + 0.5*nf(x,y,z,1)/rho;
-    h(x,y,z,3) = ufbar(1) + 0.5*afbar(1) - 0.5/(tau_f+0.5)*phi/(rho+phi)*(ufbar(1)-ugbar(1) + 0.5*(afbar(1)-agbar(1))) + 0.5*nf(x,y,z,2)/rho;
-    h(x,y,z,4) = ufbar(2) + 0.5*afbar(2) - 0.5/(tau_f+0.5)*phi/(rho+phi)*(ufbar(2)-ugbar(2) + 0.5*(afbar(2)-agbar(2))) + 0.5*nf(x,y,z,3)/rho;
+  // *********** Monitor Process, watching for the variables magnitudes range ***********
+  Real ratio_noisevel = 0.;
+  int compMax = 0;
+
+  if(mass==0){
+    // **********************   WITHOUT NOISE TERM   **********************;
+    h(x,y,z,2) = ufbar(0) + 0.5*afbar(0) - 0.5/(tau_f+0.5)*phi/(rho+phi)*(ufbar(0)-ugbar(0) + 0.5*(afbar(0)-agbar(0)));// + 0.5*nf(x,y,z,1)/rho; 
+    h(x,y,z,3) = ufbar(1) + 0.5*afbar(1) - 0.5/(tau_f+0.5)*phi/(rho+phi)*(ufbar(1)-ugbar(1) + 0.5*(afbar(1)-agbar(1)));// + 0.5*nf(x,y,z,2)/rho;
+    h(x,y,z,4) = ufbar(2) + 0.5*afbar(2) - 0.5/(tau_f+0.5)*phi/(rho+phi)*(ufbar(2)-ugbar(2) + 0.5*(afbar(2)-agbar(2)));// + 0.5*nf(x,y,z,3)/rho;
+
+    h(x,y,z,6) = ugbar(0) + 0.5*agbar(0) - 0.5/(tau_g+0.5)*rho/(rho+phi)*(ugbar(0)-ufbar(0) + 0.5*(agbar(0)-afbar(0)));// + 0.5*ng(x,y,z,1)/phi;
+    h(x,y,z,7) = ugbar(1) + 0.5*agbar(1) - 0.5/(tau_g+0.5)*rho/(rho+phi)*(ugbar(1)-ufbar(1) + 0.5*(agbar(1)-afbar(1)));// + 0.5*ng(x,y,z,2)/phi;
+    h(x,y,z,8) = ugbar(2) + 0.5*agbar(2) - 0.5/(tau_g+0.5)*rho/(rho+phi)*(ugbar(2)-ufbar(2) + 0.5*(agbar(2)-afbar(2)));// + 0.5*ng(x,y,z,3)/phi;*/
   }else{
-    h(x,y,z,2) = ufbar(0) + 0.5*afbar(0) - 0.5/(tau_f+0.5)*phi/(rho+phi)*(ufbar(0)-ugbar(0) + 0.5*(afbar(0)-agbar(0))); 
-    h(x,y,z,3) = ufbar(1) + 0.5*afbar(1) - 0.5/(tau_f+0.5)*phi/(rho+phi)*(ufbar(1)-ugbar(1) + 0.5*(afbar(1)-agbar(1)));
-    h(x,y,z,4) = ufbar(2) + 0.5*afbar(2) - 0.5/(tau_f+0.5)*phi/(rho+phi)*(ufbar(2)-ugbar(2) + 0.5*(afbar(2)-agbar(2)));
-  }*/
+    // **********************   WITH NOISE TERM   **********************;
+    // velocity of fluid f, ng[1~D] for x~z components
+    if(rho>epsilon){
+      h(x,y,z,2) = ufbar(0) + 0.5*afbar(0) - 0.5/(tau_f+0.5)*phi/(rho+phi)*(ufbar(0)-ugbar(0) + 0.5*(afbar(0)-agbar(0))) + 0.5*nf(x,y,z,1)/rho;
+      h(x,y,z,3) = ufbar(1) + 0.5*afbar(1) - 0.5/(tau_f+0.5)*phi/(rho+phi)*(ufbar(1)-ugbar(1) + 0.5*(afbar(1)-agbar(1))) + 0.5*nf(x,y,z,2)/rho;
+      h(x,y,z,4) = ufbar(2) + 0.5*afbar(2) - 0.5/(tau_f+0.5)*phi/(rho+phi)*(ufbar(2)-ugbar(2) + 0.5*(afbar(2)-agbar(2))) + 0.5*nf(x,y,z,3)/rho;
+    }else{
+      h(x,y,z,2) = 0.; //ufbar(0) + 0.5*afbar(0) - 0.5/(tau_f+0.5)*phi/(rho+phi)*(ufbar(0)-ugbar(0) + 0.5*(afbar(0)-agbar(0))); 
+      h(x,y,z,3) = 0.;  //ufbar(1) + 0.5*afbar(1) - 0.5/(tau_f+0.5)*phi/(rho+phi)*(ufbar(1)-ugbar(1) + 0.5*(afbar(1)-agbar(1)));
+      h(x,y,z,4) = 0.;  //ufbar(2) + 0.5*afbar(2) - 0.5/(tau_f+0.5)*phi/(rho+phi)*(ufbar(2)-ugbar(2) + 0.5*(afbar(2)-agbar(2)));
+    }
+    // velocity of fluid g, ng[1~D] for x~z components
+    if(phi>epsilon){
+      h(x,y,z,6) = ugbar(0) + 0.5*agbar(0) - 0.5/(tau_g+0.5)*rho/(rho+phi)*(ugbar(0)-ufbar(0) + 0.5*(agbar(0)-afbar(0))) + 0.5*ng(x,y,z,1)/phi;
+      h(x,y,z,7) = ugbar(1) + 0.5*agbar(1) - 0.5/(tau_g+0.5)*rho/(rho+phi)*(ugbar(1)-ufbar(1) + 0.5*(agbar(1)-afbar(1))) + 0.5*ng(x,y,z,2)/phi;
+      h(x,y,z,8) = ugbar(2) + 0.5*agbar(2) - 0.5/(tau_g+0.5)*rho/(rho+phi)*(ugbar(2)-ufbar(2) + 0.5*(agbar(2)-afbar(2))) + 0.5*ng(x,y,z,3)/phi;
+    }else{
+      h(x,y,z,6) = 0.;  //ugbar(0) + 0.5*agbar(0) - 0.5/(tau_g+0.5)*rho/(rho+phi)*(ugbar(0)-ufbar(0) + 0.5*(agbar(0)-afbar(0)));
+      h(x,y,z,7) = 0.;  //ugbar(1) + 0.5*agbar(1) - 0.5/(tau_g+0.5)*rho/(rho+phi)*(ugbar(1)-ufbar(1) + 0.5*(agbar(1)-afbar(1)));
+      h(x,y,z,8) = 0.;  //ugbar(2) + 0.5*agbar(2) - 0.5/(tau_g+0.5)*rho/(rho+phi)*(ugbar(2)-ufbar(2) + 0.5*(agbar(2)-afbar(2)));
+    }
+    
+    for(int n=0; n<3; n++){
+      Real ratiotmp = 0.5*nf(x,y,z,n+1)/rho/(ufbar(n) + 0.5*afbar(n) - 0.5/(tau_f+0.5)*phi/(rho+phi)*(ufbar(n)-ugbar(n) + 0.5*(afbar(n)-agbar(n))));
+      if(std::abs(ratiotmp)>ratio_noisevel){
+        ratio_noisevel = ratiotmp;
+        compMax = n+2;
+      }
+      ratiotmp = 0.5*ng(x,y,z,n+1)/phi/(ugbar(n) + 0.5*agbar(n) - 0.5/(tau_g+0.5)*rho/(rho+phi)*(ugbar(n)-ufbar(n) + 0.5*(agbar(n)-afbar(n))));
+      if(std::abs(ratiotmp)>ratio_noisevel){
+        ratio_noisevel = ratiotmp;
+        compMax = n+6;
+      }
+    }
+    if(ratio_noisevel>1){
+      Print() << "ratio noise/without_noise = " << "(" << x << "," << y << ',' << z << ")-->" << ratio_noisevel << "at component " << compMax 
+      << " with noise terms f: " << nf(x,y,z,compMax+1) << " and g: " << ng(x,y,z,compMax+1) << " and density rho=" << rho << ", phi=" << phi << '\n';
+    }
+
+  }
 
   h(x,y,z,5) = hbar(x,y,z,5);  // pressure, temperally keep unchanged;
-
-  // velocity of fluid g, ng[1~D] for x~z components
-  /*if(phi>epsilon){
-    h(x,y,z,6) = ugbar(0) + 0.5*agbar(0) - 0.5/(tau_g+0.5)*rho/(rho+phi)*(ugbar(0)-ufbar(0) + 0.5*(agbar(0)-afbar(0))) + 0.5*ng(x,y,z,1)/phi;
-    h(x,y,z,7) = ugbar(1) + 0.5*agbar(1) - 0.5/(tau_g+0.5)*rho/(rho+phi)*(ugbar(1)-ufbar(1) + 0.5*(agbar(1)-afbar(1))) + 0.5*ng(x,y,z,2)/phi;
-    h(x,y,z,8) = ugbar(2) + 0.5*agbar(2) - 0.5/(tau_g+0.5)*rho/(rho+phi)*(ugbar(2)-ufbar(2) + 0.5*(agbar(2)-afbar(2))) + 0.5*ng(x,y,z,3)/phi;
-    /*if(std::isnan(h(x,y,z,6))){
-      Print() << "noise: " << 0.5*ng(x,y,z,1) << "-*-";
-    }
-  }else{
-    h(x,y,z,6) = ugbar(0) + 0.5*agbar(0) - 0.5/(tau_g+0.5)*rho/(rho+phi)*(ugbar(0)-ufbar(0) + 0.5*(agbar(0)-afbar(0)));
-    h(x,y,z,7) = ugbar(1) + 0.5*agbar(1) - 0.5/(tau_g+0.5)*rho/(rho+phi)*(ugbar(1)-ufbar(1) + 0.5*(agbar(1)-afbar(1)));
-    h(x,y,z,8) = ugbar(2) + 0.5*agbar(2) - 0.5/(tau_g+0.5)*rho/(rho+phi)*(ugbar(2)-ufbar(2) + 0.5*(agbar(2)-afbar(2)));
-  }*/
 
   // acceleration of fluid f; equal to modified quantities;
   h(x,y,z,9) = hbar(x,y,z,9);
@@ -279,6 +307,16 @@ Array1D<Real,0,nvel> fequilibrium_moments(const Array1D<Real,0,2>& fields, // rh
   coefD[1][0] = coefD[0][1]; coefD[1][1] = u[1]*u[1]/2./cs4; coefD[1][2] = u[1]*u[2]/2./cs4;
   coefD[2][0] = coefD[0][2]; coefD[2][1] = coefD[1][2]; coefD[2][2] = u[2]*u[2]/2./cs4;
   const Real trace_coefD = coefD[0][0] + coefD[1][1] + coefD[2][2];
+
+  //  ********************** Problem here ! **********************
+  //  velocity u is too LARGE !
+  /*Real maxCoefD = 0.;
+  for(int i=0; i<3; i++){
+    for(int j=0; j<3; j++){
+      if(std::abs(coefD[i][j])>maxCoefD){ maxCoefD = coefD[i][j]; }
+    }
+  }
+  Print() << maxCoefD << '\t';*/
 
   mEq( 0) = coefAB;
 
@@ -562,7 +600,8 @@ inline void LBM_timestep(const Geometry& geom,
 			 MultiFab& fold, MultiFab& gold,
 			 MultiFab& fnew, MultiFab& gnew,
 			 MultiFab& hydrovs, MultiFab& hydrovsbar,
-       MultiFab& fnoisevs, MultiFab& gnoisevs) {
+       MultiFab& fnoisevs, MultiFab& gnoisevs,
+       MultiFab& rho_eq, MultiFab& phi_eq, MultiFab& rhot_eq) {
   fold.FillBoundary(geom.periodicity());
   gold.FillBoundary(geom.periodicity());  // MUST fullfil the periodic boundary condition at EACH STEP !!!
   hydrovs.FillBoundary(geom.periodicity());
@@ -591,7 +630,7 @@ inline void LBM_timestep(const Geometry& geom,
 
   // here all Multifab variables;
   LBM_hydrovars_modified(fold, gold, hydrovsbar);
-  thermal_noise(fnoisevs, gnoisevs, hydrovsbar);
+  thermal_noise(fnoisevs, gnoisevs, rho_eq, phi_eq, rhot_eq);
   LBM_hydrovars(fold, gold, hydrovs, hydrovsbar, fnoisevs, gnoisevs);
 }
 
@@ -665,7 +704,8 @@ inline void LBM_init_droplet(const Real r,
 			     MultiFab& hydrovs,
            MultiFab& hydrovsbar,
            MultiFab& fnoisevs,
-           MultiFab& gnoisevs) {
+           MultiFab& gnoisevs,
+           MultiFab& rho_eq, MultiFab& phi_eq, MultiFab& rhot_eq) {
   const IntVect box = geom.Domain().length();
   /*
   const Box& amrex::Geometry::Domain() const: Returns our rectangular domain.
@@ -701,7 +741,8 @@ inline void LBM_init_droplet(const Real r,
 
   });
   LBM_hydrovars_modified(mf, mg, hydrovsbar);
-  thermal_noise(fnoisevs, gnoisevs, hydrovsbar);
+  thermal_noise(fnoisevs, gnoisevs, rho_eq, phi_eq, rhot_eq);
+  //thermal_noise(fnoisevs, gnoisevs, hydrovsbar);
   LBM_hydrovars(mf, mg, hydrovs, hydrovsbar, fnoisevs, gnoisevs);
 }
 

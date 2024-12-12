@@ -10,9 +10,12 @@ using namespace amrex;
 #include "LBM_binary.H"
 #include "Debug.H"
 #include "AMReX_FileIO.H"
+#include "externlib.H"
+//#include "AMReX_FileIO.H"
+
 
 const bool tagHDF5 = false; 
-string plot_file_root = "./lbm_data_shshan_alpha0_4_xi_0/plt";
+string plot_file_root = "./lbm_data_shshan_alpha0_4_xi_1e-6/plt";
 
 inline void WriteOutput(int step,
 			const MultiFab& hydrovs,
@@ -105,7 +108,7 @@ void main_driver(const char* argv) {
   int max_grid_size = 8;
 
   // default time stepping parameters
-  int nsteps = 1;//300;
+  int nsteps = 300;
   int plot_int = 10;
 
   // default droplet radius (% of box size)
@@ -152,16 +155,61 @@ void main_driver(const char* argv) {
   MultiFab gold(ba, dm, nvel, nghost);
   MultiFab gnew(ba, dm, nvel, nghost);
   MultiFab hydrovs(ba, dm, nhydro, nghost);
-  MultiFab hydrovsbar(ba, dm, nhydro, nghost);  // modified hydrodynamic variables;
+  MultiFab hydrovsbar(ba, dm, nhydro, nghost);  // modified hydrodynamic variables
   MultiFab fnoisevs(ba, dm, nvel, nghost); // thermal noise storage of fluid f for each step;
   MultiFab gnoisevs(ba, dm, nvel, nghost);
 
   // set up variable names for output
   const Vector<std::string> var_names = VariableNames(nhydro);
 
+  MultiFab rho_eq(ba, dm, 1, nghost); rho_eq.setVal(0.);  // default values applies for 0 noise cases
+  MultiFab phi_eq(ba, dm, 1, nghost); phi_eq.setVal(0.);
+  MultiFab rhot_eq(ba, dm, 1, nghost);  rhot_eq.setVal(1.);
+
+  bool noiseSwitch;
+  if(mass==0){
+    noiseSwitch = false;
+  }else{
+    noiseSwitch = true;
+  }
   
+  if(noiseSwitch){
+    Print() << "Noise switch on\n";
+    LoadSingleMultiFab("./equilibrium_rho", rho_eq);  // the ghost layers values are meaningless
+    LoadSingleMultiFab("./equilibrium_phi", phi_eq);
+    LoadSingleMultiFab("./equilibrium_rhot", rhot_eq);
+  }else{
+    Print() << "Noise switch off\n";
+  }
+  
+  //***********
+  Function3DAMReX func3D(ba, geom, dm, func3D_test);
+  Function3DAMReX func3D_mfab(rho_eq, geom);
+  Print() << func3D_mfab.getBoxArray() << '\n';
+  Print() << func3D_mfab.getnComp() << '\n';
+  // if use like "BoxArray& ba_func = ***", [ba_func] will not be able to be modified; Since member function return the constant reference
+  BoxArray ba_func = func3D.getBoxArray(); 
+  Geometry func_geom = func3D.getGeometry();
+  //func3D.setBoxArray(ba_func.maxSize(4));
+  Print() << func3D.getBoxArray() << '\n';
+  Print() << func_geom.Domain() << '\n';
+  //***********/
+
+  /**********
+  int n = 4;
+  Real d = 3;
+  Real c = 4;
+  int N = 15+1; // maximum order of taylor expansion terms for 1/cosh(dx-c); 15~20 for recommendation
+  std::vector<Real> coefSVec = getCoefS(N);
+  std::vector<std::vector<Real>> combVec = getCombNomial(n);
+  //Print() << integral_func2_series(n, d, c, combVec, coefSVec, 1/d) << '\n';  // different numerical precision compared with python code;
+  //Print() << integral_func3_series(3, 1.) << '\n';
+  //Print() << integral_func1_series(3, 1., 100) << '\n';
+  **********/
+
+  /************
   // INITIALIZE
-  LBM_init_droplet(radius, geom, fold, gold, hydrovs, hydrovsbar, fnoisevs, gnoisevs);
+  LBM_init_droplet(radius, geom, fold, gold, hydrovs, hydrovsbar, fnoisevs, gnoisevs, rho_eq, phi_eq, rhot_eq);
   MultiFabNANCheck(hydrovs, true, 0);
   // Write a plotfile of the initial data if plot_int > 0
   if (plot_int > 0)
@@ -171,8 +219,8 @@ void main_driver(const char* argv) {
   
   // TIMESTEP
   for (int step=1; step <= nsteps; ++step) {
-    LBM_timestep(geom, fold, gold, fnew, gnew, hydrovs, hydrovsbar, fnoisevs, gnoisevs);
-    MultiFabNANCheck(hydrovs, true, step);
+    LBM_timestep(geom, fold, gold, fnew, gnew, hydrovs, hydrovsbar, fnoisevs, gnoisevs, rho_eq, phi_eq, rhot_eq);
+    MultiFabNANCheck(hydrovs, false, step);
     if (plot_int > 0 && step%plot_int ==0){
       //PrintDensityFluctuation(hydrovs, var_names, step);
       WriteOutput(step, hydrovs, var_names, geom, tagHDF5);
@@ -188,16 +236,31 @@ void main_driver(const char* argv) {
   ParallelDescriptor::ReduceRealMax(stop_time);
 
   amrex::Print() << "Run time = " << stop_time << std::endl;
-  
-  PrintConvergence(plot_file_root, 200, 300, plot_int, hydrovs, 0, 1);
-  PrintConvergence(plot_file_root, 200, 300, plot_int, hydrovs, 1, 1);
-  PrintConvergence(plot_file_root, 200, 300, plot_int, hydrovs, 5, 1);
-  
 
+  // Print convergence and extract the equilibrium state solution;
+  MultiFab mfab_rho_eq(ba, dm, 1, nghost);
+  MultiFab mfab_phi_eq(ba, dm, 1, nghost);
+  MultiFab mfab_rhot_eq(ba, dm, 1, nghost);
+  PrintConvergence(plot_file_root, 200, 300, plot_int, mfab_rho_eq, 0, 1, (!noiseSwitch)); // copy the ensemble averaged solution to [mfab_rho_eq];
+  Vector< std::string > vec_varname;  vec_varname.push_back("rho_eq");
+  if(!noiseSwitch){
+    WriteSingleLevelPlotfile("./equilibrium_rho", mfab_rho_eq, vec_varname, geom, 0, 0);  // time & step = 0 just for simplicity; meaningless here;
+  }
+  
+  vec_varname.clear();  vec_varname.push_back("phi_eq");
+  PrintConvergence(plot_file_root, 200, 300, plot_int, mfab_phi_eq, 1, 1, (!noiseSwitch));  // [phi] at index 1;
+  if(!noiseSwitch){
+    WriteSingleLevelPlotfile("./equilibrium_phi", mfab_phi_eq, vec_varname, geom, 0, 0);  // time & step = 0 just for simplicity; meaningless here;
+  }
+  
+  vec_varname.clear();  vec_varname.push_back("rhot_eq");
+  PrintConvergence(plot_file_root, 200, 300, plot_int, mfab_rhot_eq, 5, 1, (!noiseSwitch)); // total density at index 5;
+  if(!noiseSwitch){
+    WriteSingleLevelPlotfile("./equilibrium_rhot", mfab_rhot_eq, vec_varname, geom, 0, 0);  // time & step = 0 just for simplicity; meaningless here;
+  }
+  ***********/
+  
 }
-
-
-
 
 
 /*

@@ -4,17 +4,13 @@
 
  2: _sigtramp (in libsystem_platform.dylib) + 29
 
- 4: abort (in libsystem_c.dylib) + 126
+ 4: std::__1::enable_if<IsFabArray<amrex::MultiFab>::value, void>::type amrex::experimental::detail::ParallelFor<amrex::MultiFab, LBM_hydrovars_modified(amrex::MultiFab&, amrex::MultiFab&, amrex::MultiFab&)::'lambda'(int, int, int, int)>(amrex::MultiFab const&, amrex::IntVectND<3> const&, amrex::IntVectND<3> const&, bool, LBM_hydrovars_modified(amrex::MultiFab&, amrex::MultiFab&, amrex::MultiFab&)::'lambda'(int, int, int, int) const&) (in main3d.gnu.MPI.ex) (AMReX_MFParallelForC.H:26)
 
- 5: malloc_vreport (in libsystem_malloc.dylib) + 857
+ 5: LBM_timestep(amrex::Geometry const&, amrex::MultiFab&, amrex::MultiFab&, amrex::MultiFab&, amrex::MultiFab&, amrex::MultiFab&, amrex::MultiFab&, amrex::MultiFab&, amrex::MultiFab&) (in main3d.gnu.MPI.ex) (LBM_binary.H:593)
 
- 6: malloc_report (in libsystem_malloc.dylib) + 151
+ 6: main_driver(char const*) (in main3d.gnu.MPI.ex) (main_driver.cpp:0)
 
- 7: PrintConvergence(std::__1::basic_string<char, std::__1::char_traits<char>, std::__1::allocator<char>>, int, int, int, amrex::MultiFab const&, int, int, int, int, std::__1::basic_string<char, std::__1::char_traits<char>, std::__1::allocator<char>> const&, std::__1::basic_string<char, std::__1::char_traits<char>, std::__1::allocator<char>> const&) (in main3d.gnu.MPI.ex) (Debug.H:163)
+ 7: main (in main3d.gnu.MPI.ex) (main.cpp:25)
 
- 8: main_driver(char const*) (in main3d.gnu.MPI.ex) (main_driver.cpp:192)
-
- 9: main (in main3d.gnu.MPI.ex) (main.cpp:25)
-
-10: start (in dyld) + 1942
+ 8: start (in dyld) + 1942
 

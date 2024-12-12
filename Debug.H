@@ -108,11 +108,28 @@ inline void PrintMassConservation(MultiFab& hydrovs, Vector<std::string> Variabl
     amrex::MultiFabFileFullPrefix():    e.g., return "** /plt[nstep]/Level_[nlevel]/Cell"
     plotfilename (e.g., "** /plt[nstep]") is assembled by function std::string amrex::Concatenate(const std::string& root, int num, int mindigits)
     (returns rootNNNN where NNNN == num) using input "plot_file_root"
-    This function calculates the p-norm of the density variations (ensemble average mean substracted) matrix from [step1] ~ [step2] (both included).
-    const amrex::BoxArray& ba = mf.boxArray(); 
+    This function calculates the p-like norm of the density variations (ensemble average mean substracted) matrix from [step1] ~ [step2] (both included).
+    ifSave: indicator of whether save the ensemble average hydrovs component into [mfab_ref]; false (do not save) by default;
 */		
-inline void PrintConvergence(std::string plot_file_root, int step1, int step2, int step_int, const MultiFab& mfab_ref, int compIdx=0, int p_tag=1, int nlevel=0, int mindigits=5,
-             const std::string &levelPrefix="Level_", const std::string &mfPrefix="Cell"){
+inline void PrintConvergence(std::string plot_file_root, int step1, int step2, int step_int, MultiFab& mfab_ref, int compIdx=0,int p_tag=1, bool ifSave=false, 
+            int nlevel=0, int mindigits=5, const std::string &levelPrefix="Level_", const std::string &mfPrefix="Cell"){
+    std::string File(amrex::Concatenate(plot_file_root,step1,mindigits) + "/Header");
+    //VisMF::IO_Buffer io_buffer(VisMF::GetIOBufferSize());
+    Vector<char> fileCharPtr;
+    ParallelDescriptor::ReadAndBcastFile(File, fileCharPtr); // char stream of [File]
+    /*for (int i = 0; i < fileCharPtr.size(); ++i) {
+        std::cout << fileCharPtr[i] << " ";
+    }*/
+    std::string fileCharPtrString(fileCharPtr.dataPtr()); // get access to the underlying data pointer, ONLY for Vector in AMRex; same with .data() here;
+    std::istringstream is(fileCharPtrString, std::istringstream::in);
+    std::string line, word;
+    // read in title line, meaningless generally;
+    std::getline(is, line);
+    // read in finest_level
+    int numComp;
+    is >> numComp;
+    //Print() << numComp << '\n';
+    
     Print() << "Convergence test emsemble selection: from step " << step1 << " to step " << step2 << " with step interval " << step_int << '\n';
     int Nsteps = (step2 - step1)/step_int + 1;
     MultiFab** hydrovs_readin_array = new MultiFab*[Nsteps];    // arrays of hydrovs MultiFab pointers, used for storing read-in multifabs ensemble
@@ -122,16 +139,22 @@ inline void PrintConvergence(std::string plot_file_root, int step1, int step2, i
     auto const & hydrovs_mean_array4D = hydrovs_mean.arrays();
     for(int n=0; n<Nsteps; n++){
         int nstep = step1 + step_int*n;
-        hydrovs_readin_array[n] = new MultiFab(mfab_ref.boxArray(), mfab_ref.DistributionMap(), 1, mfab_ref.nGrow());
+        // construct multifab object with same params with given [mfab_ref];
+        hydrovs_readin_array[n] = new MultiFab(mfab_ref.boxArray(), mfab_ref.DistributionMap(), numComp, mfab_ref.nGrow()); // why here with ncomp = 1, it still can access component >=1?
         const std::string& checkpointname = amrex::Concatenate(plot_file_root,nstep,mindigits);
+
         VisMF::Read((*(hydrovs_readin_array[n])), amrex::MultiFabFileFullPrefix(nlevel, checkpointname, levelPrefix, mfPrefix));
+        //Print() << hydrovs_readin_array[n]->nComp() << '\n';
         auto const & hydrovs_readin_ptr_array4D = hydrovs_readin_array[n]->arrays();
         // calculate the mean multifab for given component index [compIdx]
         ParallelFor((*(hydrovs_readin_array[n])), IntVect(0), [=] AMREX_GPU_DEVICE(int nbx, int x, int y, int z) {
             hydrovs_mean_array4D[nbx](x,y,z,0) = hydrovs_mean_array4D[nbx](x,y,z,0) + hydrovs_readin_ptr_array4D[nbx](x,y,z,compIdx);
         });
     }
-    hydrovs_mean.mult(1./Nsteps, 0, 1, 0);  // multilication for component 0, total 1 components with 0 ghost layer;
+    hydrovs_mean.mult(1./Nsteps, 0, 1, mfab_ref.nGrow());  // multilication for component 0, total 1 components with [mfab_ref.nGrow()] ghost layer;
+    if(ifSave){
+        mfab_ref.copy(hydrovs_mean, 0, 0, 1);   // derived from BaseFab member function;
+    }
 
     // calculate the p-residues (p=1 or \infty) for ensemble MultiFabs stored in array [hydrovs_readin_array];
     // Here mfab data are considered as reshaped vectors;
@@ -164,7 +187,6 @@ inline void PrintConvergence(std::string plot_file_root, int step1, int step2, i
         delete[] hydrovs_readin_array[n]; 
     }*/
     delete[] hydrovs_readin_array;
-
 }
 
 

@@ -119,7 +119,7 @@ tmp_build_dir/o/3d.gnu.MPI.EXE/main_driver.o: main_driver.cpp \
   ../../amrex/Src/Base/AMReX_AsyncOut.H \
   ../../amrex/Src/Base/AMReX_NFiles.H \
   ../../amrex/Src/Base/AMReX_VisMFBuffer.H LBM_binary.H LBM_d3q19.H \
-  Debug.H AMReX_FileIO.H
+  Debug.H AMReX_FileIO.H externlib.H
 
 ../../amrex/Src/Base/AMReX.H:
 
@@ -382,3 +382,5 @@ LBM_d3q19.H:
 Debug.H:
 
 AMReX_FileIO.H:
+
+externlib.H:
