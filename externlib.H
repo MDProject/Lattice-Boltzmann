@@ -13,6 +13,109 @@ Real func3D_test(int x, int y, int z, int n){
     return x*x + y*y + z*z + n;
 }
 
+class Function3DAMReX;  // forward declaration allows you to use pointers (and references) to that class without yet having the whole class definition.
+
+AMREX_GPU_HOST_DEVICE
+class Integration{
+    public:
+        static double*** create_3d_array(int Nx, int Ny, int Nz, Real initVal=1.) {    // by default, all values are initialized to be 1.;
+            double*** arr = (double***)malloc(Nx * sizeof(double**));
+            for (int i = 0; i < Nx; i++) {
+                arr[i] = (double**)malloc(Ny * sizeof(double*));
+                for (int j = 0; j < Ny; j++) {
+                    arr[i][j] = (double*)malloc(Nz * sizeof(double));
+                }
+            }
+            // Initialize all elements to 1
+            for (int i = 0; i < Nx; i++) {
+                for (int j = 0; j < Ny; j++) {
+                    for (int k = 0; k < Nz; k++) {
+                        arr[i][j][k] = 1.0;
+                    }
+                }
+            }
+            return arr;
+        }
+
+        // Static member function shared with external funcion;
+        static Real trapezoid3D(const Function3DAMReX& func3D){
+            return 0.;
+        }
+
+        static void trapezoid3DWeightTensor(const Box& box, Real**** wPtr){
+            IntVect boxSize = box.length();
+            int Nx = boxSize[0];    int Ny = boxSize[1];    int Nz = boxSize[2];
+            (*wPtr) = create_3d_array(boxSize[0], boxSize[1], boxSize[2]);
+            // Corner points, total 8 points
+            (*wPtr)[0][0][0] = 1.0/8;
+            (*wPtr)[Nx-1][0][0] = 1.0/8;
+            (*wPtr)[0][Ny-1][0] = 1.0/8;
+            (*wPtr)[Nx-1][Ny-1][0] = 1.0/8;
+            (*wPtr)[0][0][Nz-1] = 1.0/8;
+            (*wPtr)[Nx-1][0][Nz-1] = 1.0/8;
+            (*wPtr)[0][Ny-1][Nz-1] = 1.0/8;
+            (*wPtr)[Nx-1][Ny-1][Nz-1] = 1.0/8;
+
+            // Boundary edge points, total 12 edges
+            // 4 vertical edges
+            for (int k = 1; k < Nz-1; k++) {
+                (*wPtr)[0][0][k] = 1.0/4;
+                (*wPtr)[Nx-1][0][k] = 1.0/4;
+                (*wPtr)[0][Ny-1][k] = 1.0/4;
+                (*wPtr)[Nx-1][Ny-1][k] = 1.0/4;
+            }
+            // 4 x-parallel horizontal edges
+            for (int i = 1; i < Nx-1; i++) {
+                (*wPtr)[i][0][0] = 1.0/4;
+                (*wPtr)[i][0][Nz-1] = 1.0/4;
+                (*wPtr)[i][Ny-1][Nz-1] = 1.0/4;
+                (*wPtr)[i][Ny-1][0] = 1.0/4;
+            }
+            // 4 y-parallel horizontal edges
+            for (int j = 1; j < Ny-1; j++) {
+                (*wPtr)[0][j][0] = 1.0/4;
+                (*wPtr)[0][j][Nz-1] = 1.0/4;
+                (*wPtr)[Nx-1][j][Nz-1] = 1.0/4;
+                (*wPtr)[Nx-1][j][0] = 1.0/4;
+            }
+            // Interior points of the bounding surfaces, total 6 surfaces
+            // Surfaces parallel with xy-plane
+            for (int i = 0; i < Nx; i++) {
+                for (int j = 0; j < Ny; j++) {
+                    if ((*wPtr)[i][j][0] == 1.0) {
+                        (*wPtr)[i][j][0] = 1.0/2;
+                    }
+                    if ((*wPtr)[i][j][Nz-1] == 1.0) {
+                        (*wPtr)[i][j][Nz-1] = 1.0/2;
+                    }
+                }
+            }
+            // Surfaces parallel with xz-plane
+            for (int i = 0; i < Nx; i++) {
+                for (int k = 0; k < Nz; k++) {
+                    if ((*wPtr)[i][0][k] == 1.0) {
+                        (*wPtr)[i][0][k] = 1.0/2;
+                    }
+                    if ((*wPtr)[i][Ny-1][k] == 1.0) {
+                        (*wPtr)[i][Ny-1][k] = 1.0/2;
+                    }
+                }
+            }
+            // Surfaces parallel with yz-plane
+            for (int j = 0; j < Ny; j++) {
+                for (int k = 0; k < Nz; k++) {
+                    if ((*wPtr)[0][j][k] == 1.0) {
+                        (*wPtr)[0][j][k] = 1.0/2;
+                    }
+                    if ((*wPtr)[Nx-1][j][k] == 1.0) {
+                        (*wPtr)[Nx-1][j][k] = 1.0/2;
+                    }
+                }
+            }
+        }
+};
+
+
 AMREX_GPU_HOST_DEVICE
 class Function3DAMReX{
     private:
@@ -28,17 +131,24 @@ class Function3DAMReX{
     dm_, Real (*func) (int, int, int, int), int ncomp_, int ngrow_);
 
         Function3DAMReX(const MultiFab& mfab, const Geometry& geom_) {
-            func_mfab.FabArray<FArrayBox>::ParallelCopy(mfab);
             ba = mfab.boxArray();
             geom = geom_;
             dm = mfab.DistributionMap();
             ncomp = mfab.nComp();
             ngrow = mfab.nGrow();
+
+            func_mfab.define(ba, dm, ncomp, ngrow); 
+            // MUST FIRST define the MultiFab with same DistributionMapping, otherwise dest mfab has empty [dm] property; SAME for boxArray;
+            func_mfab.ParallelCopy(mfab);
         }
+        /* cannot add "const" at the ending, in that case the member variable [func_mfab] declared const, you cannot bind its Array4<const amrex::Real> result to 
+        a variable of type Array4<amrex::Real> or const Array4<amrex::Real> */
+        void add(const Function3DAMReX& func3D);    
 
         // Accessors for member variables, cannot MODIFY them;
         // In this way, BoxArray ba_func = func3D.getBoxArray(); [ba_func] will be a new object which violates the purpose of "const"
         //  BoxArray getBoxArray() const { return ba; }  
+        const MultiFab& getMultiFab() const { return func_mfab; }
         const BoxArray& getBoxArray() const { return ba; }
         const Geometry& getGeometry() const { return geom; }
         const DistributionMapping& getDistributionMapping() const { return dm; }
@@ -47,19 +157,18 @@ class Function3DAMReX{
         
         // Modify elementary properties;
         void setBoxArray(const BoxArray& ba_) { ba = ba_; }
+        void setGeometry(const Geometry& geom_) { geom = geom_; }
         void setDistributionMapping(const DistributionMapping& dm_) { dm = dm_; }
         void setnComp(int ncomp_) { ncomp = ncomp_; }
         void setnGrow(int ngrow_) { ngrow = ngrow_; }
 
         // Modify element at grid point (x,y,z) of component k
-        void setElement(int x, int y, int z, int n);
+        void setElement(Real val, int x, int y, int z, int n);
         // Get element at grid point (x,y,z) of component k
         Real getElement(int x, int y, int z, int n);
 
         // member functions provided for numerical computations
-        void integral3D(const Function3DAMReX& func_weight){    // calculate the integral of \int (*this)\cdot func_weight dV
-            
-        }
+        Real integral3D(const Function3DAMReX& func_weight, Real*** weightTensor);    // calculate the integral of \int (*this)\cdot func_weight dV
 
 };
 
@@ -72,16 +181,72 @@ Function3DAMReX::Function3DAMReX(const BoxArray& ba_, const Geometry& geom_, con
     ngrow = ngrow_;
     ncomp = ncomp_;
 
-    func_mfab.define(ba, dm, ncomp, ngrow);
+    func_mfab.define(ba, dm, ncomp, ngrow); // Allocating multifab object;
     for(amrex::MFIter mfi(func_mfab); mfi.isValid(); ++mfi){
         const amrex::Box& bx = mfi.validbox();
-        const amrex::Array4<amrex::Real>& mf_array = func_mfab.array(mfi);
+        amrex::Array4<amrex::Real> const& mf_array = func_mfab.array(mfi);
 
         ParallelFor(bx, ncomp, [=] AMREX_GPU_DEVICE(int i, int j, int k, int n){
             mf_array(i,j,k,n) = func(i,j,k,n);
         });
     }
 }
+
+/*
+    copy constructor of 'Function3DAMReX' is implicitly deleted because field 'func_mfab' has a deleted copy constructor
+        MultiFab func_mfab;
+*/
+void Function3DAMReX::add(const Function3DAMReX& func3D) {
+    const MultiFab& mfab_add = func3D.getMultiFab();
+
+    for(amrex::MFIter mfi(func_mfab); mfi.isValid(); ++mfi){
+        const amrex::Box& bx = mfi.validbox();
+        const amrex::Array4<amrex::Real>& mf_array = func_mfab.array(mfi);
+        /* function to be added; Since it is declared to be const, so here use type "Array4<const amrex::Real>" instead;
+        see comments in class definition */
+        const amrex::Array4<const amrex::Real>& mf_array_add = mfab_add.array(mfi);   
+        ParallelFor(bx, ncomp, [=] AMREX_GPU_DEVICE(int i, int j, int k, int n){
+            mf_array(i,j,k,n) = mf_array(i,j,k,n) + mf_array_add(i,j,k,n);
+        });
+    }
+}
+
+void Function3DAMReX::setElement(Real val, int x, int y, int z, int n){
+    for (MFIter mfi(func_mfab); mfi.isValid(); ++mfi) {
+        const Box& bx = mfi.validbox();
+        FArrayBox& fab = func_mfab[mfi];
+        if (bx.contains(IntVect(x, y, z))) {
+            fab(IntVect(x, y, z), n) = val;
+            break;
+        }
+    }
+}
+
+Real Function3DAMReX::getElement(int x, int y, int z, int n){
+    Real val = -1e-30;
+    for (MFIter mfi(func_mfab); mfi.isValid(); ++mfi) {
+        const Box& bx = mfi.validbox();
+        FArrayBox& fab = func_mfab[mfi];
+        auto fab_array = fab.array();
+        if (bx.contains(IntVect(x, y, z))) {
+            val = fab_array(x,y,z,n);
+            break;
+        }
+    }
+    return val;
+}
+
+Real Function3DAMReX::integral3D(const Function3DAMReX& func_weight, Real*** weightTensor=NULL){
+    // First compare box size if they are same;
+    Real*** wt = weightTensor;
+    if(wt == NULL){
+        Integration::trapezoid3DWeightTensor(geom.Domain(), &wt);
+    }
+    
+
+    return wt[0][0][0];
+}
+
 
 
 // These library function are directly converted from python, see "CodingNote_analysis_supp.ipynb" for details; 

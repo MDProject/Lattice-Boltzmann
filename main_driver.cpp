@@ -185,14 +185,28 @@ void main_driver(const char* argv) {
   //***********
   Function3DAMReX func3D(ba, geom, dm, func3D_test);
   Function3DAMReX func3D_mfab(rho_eq, geom);
-  Print() << func3D_mfab.getBoxArray() << '\n';
-  Print() << func3D_mfab.getnComp() << '\n';
+  MultiFab Imfab(ba, dm, 1, nghost);  Imfab.setVal(1.);
+  Function3DAMReX func3D_weight(Imfab, geom);
+  //Print() << func3D.getElement(1,1,1,0) << '\n';
+
+  Print() << func3D_mfab.getElement(1,1,1,0) << '\n';
+  func3D_mfab.add(func3D_weight);
+  Print() << func3D_mfab.getElement(1,1,1,0) << '\n';
+  //func3D_mfab.integral3D(func3D_weight);
+
+
+  //Print() << func3D_mfab.getBoxArray() << '\n';
+  //Print() << func3D_mfab.getnComp() << '\n';
   // if use like "BoxArray& ba_func = ***", [ba_func] will not be able to be modified; Since member function return the constant reference
-  BoxArray ba_func = func3D.getBoxArray(); 
-  Geometry func_geom = func3D.getGeometry();
+  //BoxArray ba_func = func3D.getBoxArray(); 
+  //Geometry geom_func = func3D.getGeometry();
   //func3D.setBoxArray(ba_func.maxSize(4));
-  Print() << func3D.getBoxArray() << '\n';
-  Print() << func_geom.Domain() << '\n';
+  //Print() << func3D.getBoxArray() << '\n';
+  //Print() << geom_func.Domain() << '\n';
+
+  //func3D_mfab.setElement(-1,0,0,0,0);
+  //Print() << func3D_mfab.getElement(0,0,0,0) << '\n';
+
   //***********/
 
   /**********
