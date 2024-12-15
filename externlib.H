@@ -8,9 +8,28 @@
 #include <cmath>
 #include "AMReX_FileIO.H"
 #include <AMReX_FabArray.H>
+#include "AMReX_FileIO.H"
 
-Real func3D_test(int x, int y, int z, int n){
-    return x*x + y*y + z*z + n;
+/*  *****************************************************************************************************
+    *************************** Based on AMReX-MultiFab arithmetic operations ***************************
+    *****************************************************************************************************
+  // The function returns a single scalar (Real) value, which is the sum of the products of corresponding elements in the specified components of x and y;
+  Print() << "multifab dot(): " << amrex::MultiFab::Dot(rho_eq, 0, Imfab, 0, 1, 0) << '\n';
+  // Returns the sum of component "comp" (0 by default) over the MultiFab; :sum(int comp = 0, bool local = false)
+  Print() << "multifab sum() " << rho_eq.sum() << '\n';
+  // element-wise scaling amrex::MultiFab::Multiply(MultiFab& dst, const MultiFab& src, int srccomp, int dstcomp, int numcomp, int nghost)
+  amrex::MultiFab::Multiply(rho_eq, Imfab, 0, 0, 1, 0);
+  Print() << "after multifab Multiply() " << rho_eq.sum() << '\n';
+  //Scales the value of each cell in the valid region of each component of the MultiFab by the scalar val
+  void amrex::MultiFab::mult(Real val, int nghost=0)
+  //Adds the scalar value val to the value of each cell in the specified subregion of the MultiFab which consists of the num_comp components starting at component comp. 
+  void amrex::MultiFab::plus(Real val, int 	comp, int num_comp, int nghost=0)
+*/
+
+
+
+Real func3D_test(Real x, Real y, Real z, int n){
+    return x*x * y*y * z*z;
 }
 
 class Function3DAMReX;  // forward declaration allows you to use pointers (and references) to that class without yet having the whole class definition.
@@ -128,7 +147,10 @@ class Function3DAMReX{
         MultiFab func_mfab;
     public:
         Function3DAMReX(const BoxArray& ba_, const Geometry& geom_, const DistributionMapping&
-    dm_, Real (*func) (int, int, int, int), int ncomp_, int ngrow_);
+    dm_, Real (*func) (Real, Real, Real, int), int ncomp_, int ngrow_);
+
+        Function3DAMReX(const BoxArray& ba_, const Geometry& geom_, const DistributionMapping&
+    dm_, int ngrow_, Real*** dataPtr); // 1 component total, constructed from 3D array with same size of Box;
 
         Function3DAMReX(const MultiFab& mfab, const Geometry& geom_) {
             ba = mfab.boxArray();
@@ -141,17 +163,17 @@ class Function3DAMReX{
             // MUST FIRST define the MultiFab with same DistributionMapping, otherwise dest mfab has empty [dm] property; SAME for boxArray;
             func_mfab.ParallelCopy(mfab);
         }
-        /* cannot add "const" at the ending, in that case the member variable [func_mfab] declared const, you cannot bind its Array4<const amrex::Real> result to 
-        a variable of type Array4<amrex::Real> or const Array4<amrex::Real> */
-        void add(const Function3DAMReX& func3D);    
 
         // Accessors for member variables, cannot MODIFY them;
         // In this way, BoxArray ba_func = func3D.getBoxArray(); [ba_func] will be a new object which violates the purpose of "const"
         //  BoxArray getBoxArray() const { return ba; }  
-        const MultiFab& getMultiFab() const { return func_mfab; }
-        const BoxArray& getBoxArray() const { return ba; }
-        const Geometry& getGeometry() const { return geom; }
-        const DistributionMapping& getDistributionMapping() const { return dm; }
+        // providing two choices: return const or non-const reference of MultiFab members 
+        const MultiFab& getMultiFab() const { return func_mfab; }   // Call it by using "CONST reference" to void using the deleted constructor of MultiFab;
+        MultiFab& getMultiFab() { return func_mfab; }
+        
+        const BoxArray getBoxArray() const { return ba; }
+        const Geometry getGeometry() const { return geom; }
+        const DistributionMapping getDistributionMapping() const { return dm; }
         const int getnComp() const { return ncomp; }
         const int getnGrow() const { return ngrow; }
         
@@ -162,32 +184,77 @@ class Function3DAMReX{
         void setnComp(int ncomp_) { ncomp = ncomp_; }
         void setnGrow(int ngrow_) { ngrow = ngrow_; }
 
+        // ******Ghost layers are not included by default******;
         // Modify element at grid point (x,y,z) of component k
         void setElement(Real val, int x, int y, int z, int n);
         // Get element at grid point (x,y,z) of component k
         Real getElement(int x, int y, int z, int n);
 
+        // *********** Basic ELEMENT-WISE arithmetic operation ***********
+        /* cannot add "const" at the ending, in that case the member variable [func_mfab] declared const, you cannot bind its Array4<const amrex::Real> result
+        to a variable of type Array4<amrex::Real> or const Array4<amrex::Real> */
+        void add(const Function3DAMReX& func3D);
+        void add(const Real scalar);    
+        void mult(const Function3DAMReX& func3D);
+        void mult(const Real scalar);
+        /*  Return the sum of component "compIdx" (-1 by default) over the MultiFab; if compIdx<0, then summation over all components
+        are returned */
+        Real sum(const int compIdx);
+
         // member functions provided for numerical computations
-        Real integral3D(const Function3DAMReX& func_weight, Real*** weightTensor);    // calculate the integral of \int (*this)\cdot func_weight dV
+        /* This function is build on [integral3D] without multiplicand function, which consumes double data memory size when calling constructor; 
+            Both functions DO NOT modify the original data  */
+        Real integral3D(const Function3DAMReX& func_multiplicand, Real*** weightTensor=NULL);    // calculate the integral of \int (*this)\cdot func_weight dV
+
+        Real integral3D(Real*** weightTensor=NULL);
 
 };
 
 Function3DAMReX::Function3DAMReX(const BoxArray& ba_, const Geometry& geom_, const DistributionMapping&
-    dm_, Real (*func) (int, int, int, int), int ncomp_=1, int ngrow_=0) : ncomp(ncomp_), ngrow(ngrow_){
+    dm_, int ngrow_, Real*** dataPtr){
+    
+    ba = ba_;
+    geom = geom_;
+    dm = dm_;
+    ngrow = ngrow_;
+    ncomp = 1;
+    func_mfab.define(ba, dm, ncomp, ngrow); // Allocating multifab object;
+    for(amrex::MFIter mfi(func_mfab); mfi.isValid(); ++mfi){
+        const amrex::Box& bx = mfi.validbox();
+        amrex::Array4<amrex::Real> const& mf_array = func_mfab.array(mfi);
+
+        ParallelFor(bx, [=] AMREX_GPU_DEVICE(int i, int j, int k){
+            mf_array(i,j,k,0) = dataPtr[i][j][k];
+            /*if(mf_array(i,j,k,0) != 1){
+                Print() << i << "--" << j << "--" << k << '\t';
+            }*/
+        });
+    }
+}
+
+Function3DAMReX::Function3DAMReX(const BoxArray& ba_, const Geometry& geom_, const DistributionMapping&
+    dm_, Real (*func) (Real, Real, Real, int), int ncomp_=1, int ngrow_=0) : ncomp(ncomp_), ngrow(ngrow_){
             
     ba = ba_;
     geom = geom_;
     dm = dm_; 
     ngrow = ngrow_;
     ncomp = ncomp_;
-
+    // ************     to be consistent with Trapezoid formula     ************
+    const IntVect box = geom.Domain().length();
+    RealBox real_box = geom.ProbDomain();
+    Real Lx = real_box.hi(0) - real_box.lo(0);
+    Real Ly = real_box.hi(1) - real_box.lo(1);
+    Real Lz = real_box.hi(2) - real_box.lo(2);
+    const Array<Real, 3> cell_size = {Lx/(box[0]-1), Ly/(box[1]-1), Lz/(box[2]-1)};
+    
     func_mfab.define(ba, dm, ncomp, ngrow); // Allocating multifab object;
     for(amrex::MFIter mfi(func_mfab); mfi.isValid(); ++mfi){
         const amrex::Box& bx = mfi.validbox();
         amrex::Array4<amrex::Real> const& mf_array = func_mfab.array(mfi);
 
         ParallelFor(bx, ncomp, [=] AMREX_GPU_DEVICE(int i, int j, int k, int n){
-            mf_array(i,j,k,n) = func(i,j,k,n);
+            mf_array(i,j,k,n) = func(i*cell_size[0],j*cell_size[1],k*cell_size[2],n);
         });
     }
 }
@@ -208,6 +275,31 @@ void Function3DAMReX::add(const Function3DAMReX& func3D) {
         ParallelFor(bx, ncomp, [=] AMREX_GPU_DEVICE(int i, int j, int k, int n){
             mf_array(i,j,k,n) = mf_array(i,j,k,n) + mf_array_add(i,j,k,n);
         });
+    }
+}
+
+void Function3DAMReX::add(const Real scalar){
+    func_mfab.plus(scalar, 0, ncomp);
+}
+
+void Function3DAMReX::mult(const Function3DAMReX& func3D){
+    const MultiFab& mfab_mult = func3D.getMultiFab();
+    amrex::MultiFab::Multiply(func_mfab, mfab_mult, 0, 0, ncomp, 0); // using library provided by AMReX;
+}
+
+void Function3DAMReX::mult(const Real scalar){
+    func_mfab.mult(scalar);
+}
+
+Real Function3DAMReX::sum(const int compIdx){
+    if(compIdx>=0){
+        return func_mfab.sum(compIdx);
+    }else{
+        Real sumVal = 0.;
+        for(int n=0; n<ncomp; n++){
+            sumVal = sumVal + func_mfab.sum(n);
+        }
+        return sumVal;
     }
 }
 
@@ -236,15 +328,52 @@ Real Function3DAMReX::getElement(int x, int y, int z, int n){
     return val;
 }
 
-Real Function3DAMReX::integral3D(const Function3DAMReX& func_weight, Real*** weightTensor=NULL){
+Real Function3DAMReX::integral3D(const Function3DAMReX& func_multiplicand, Real*** weightTensor){
     // First compare box size if they are same;
+    // Build copy for function itself to avoid directly modifying the data during integral calculations;
+    Function3DAMReX func_copy(func_mfab, geom); 
+    
     Real*** wt = weightTensor;
     if(wt == NULL){
         Integration::trapezoid3DWeightTensor(geom.Domain(), &wt);
     }
-    
+    func_copy.mult(func_multiplicand);
+    Real intVal = func_copy.integral3D(wt);
+    return intVal;
+}
 
-    return wt[0][0][0];
+Real Function3DAMReX::integral3D(Real*** weightTensor){
+    Function3DAMReX func_copy(func_mfab, geom);
+    Real*** wt = weightTensor;
+    if(wt == NULL){
+        Print() << "weight matrix initialized" << '\n';
+        Integration::trapezoid3DWeightTensor(geom.Domain(), &wt);
+    }
+    Function3DAMReX func_weight(ba, geom, dm, ngrow, wt); // cannot use reference here;
+    //WriteMultiFabToPlainText('z', weight_mfab, "./Deb");
+    
+    // ****** The index type in AMReX is Cell-Centered by default, so here we need to modify the cell-size to be consistent with Trapezoid formula ******
+    const IntVect box = geom.Domain().length();
+    RealBox real_box = geom.ProbDomain();
+    Real Lx = real_box.hi(0) - real_box.lo(0);
+    Real Ly = real_box.hi(1) - real_box.lo(1);
+    Real Lz = real_box.hi(2) - real_box.lo(2);
+    const Array<Real, 3> cell_size = {Lx/(box[0]-1), Ly/(box[1]-1), Lz/(box[2]-1)};
+    Real cell_volume = cell_size[0]*cell_size[1]*cell_size[2];
+
+    func_copy.mult(func_weight);
+    Real val = func_copy.sum(0);
+    /*// Or implemented by definition
+    Real val = 0.;
+    for(amrex::MFIter mfi(func_mfab); mfi.isValid(); ++mfi){
+        const amrex::Box& bx = mfi.validbox();
+        amrex::Array4<amrex::Real> const& mf_array = func_mfab.array(mfi);
+
+        ParallelFor(bx, [&] AMREX_GPU_DEVICE(int i, int j, int k){
+            val += mf_array(i,j,k,0)*wt[i][j][k];
+        });
+    }*/
+    return val*cell_volume;
 }
 
 
@@ -415,5 +544,31 @@ double integral_func1_series(int n, double a, int N=100) {
     return int_val;
 }
 
-
 #endif
+
+
+/**************         Examples       ************    
+  Function3DAMReX func3D(ba, geom, dm, func3D_test);
+  Function3DAMReX func3D_mfab(rho_eq, geom);
+  MultiFab Imfab(ba, dm, 1, nghost);  Imfab.setVal(1.);
+  MultiFab& func_mfab = func3D.getMultiFab();
+  const MultiFab& func_mfab = func3D.getMultiFab();
+  Function3DAMReX func3D_weight(Imfab, geom);
+  Print() << func3D.getElement(1,1,1,0) << '\n';
+
+  Print() << func3D_mfab.getElement(1,1,1,0) << '\n';
+  func3D_mfab.add(func3D_weight);
+  Print() << func3D_mfab.getElement(1,1,1,0) << '\n';
+
+  // The function returns a single scalar (Real) value, which is the sum of the products of corresponding elements in the specified components of x and y;
+  Print() << "multifab dot(): " << amrex::MultiFab::Dot(rho_eq, 0, Imfab, 0, 1, 0) << '\n';
+  Print() << "multifab sum() " << rho_eq.sum() << '\n';
+  // element-wise scaling amrex::MultiFab::Multiply(MultiFab& dst, const MultiFab& src, int srccomp, int dstcomp, int numcomp, int nghost)
+  amrex::MultiFab::Multiply(rho_eq, Imfab, 0, 0, 1, 0);
+  Print() << "after multifab Multiply() " << rho_eq.sum() << '\n';
+  func3D_mfab.mult(2.);
+  Print() << "rho_eq scaled by values using mult(): " << func3D_mfab.getMultiFab().sum() << '\n';
+  func3D_mfab.add(1.);
+  Print() << "rho_eq added by values using add(): " << func3D_mfab.getMultiFab().sum() << "(above result +" << nx << "^3=" << pow(nx, 3.) << ")\n";
+  Print() << "Integral = " << func3D.integral3D() << " & analytical result = " << 1./27. << '\n';
+*******************************************************/

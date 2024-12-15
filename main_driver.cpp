@@ -104,7 +104,7 @@ void main_driver(const char* argv) {
   Real strt_time = ParallelDescriptor::second();
     
   // default grid parameters
-  int nx = 16;
+  int nx = 40;
   int max_grid_size = 8;
 
   // default time stepping parameters
@@ -186,13 +186,37 @@ void main_driver(const char* argv) {
   Function3DAMReX func3D(ba, geom, dm, func3D_test);
   Function3DAMReX func3D_mfab(rho_eq, geom);
   MultiFab Imfab(ba, dm, 1, nghost);  Imfab.setVal(1.);
+  MultiFab& func_mfab = func3D.getMultiFab();
   Function3DAMReX func3D_weight(Imfab, geom);
+
+  /*for (MFIter mfi(rho_eq); mfi.isValid(); ++mfi){
+    const Box& box_with_ghost = mfi.validbox().grow(nghost); // Include ghost cells
+    auto const& fab_array = rho_eq.array(mfi);
+    ParallelFor(box_with_ghost, rho_eq.nComp(), [=] AMREX_GPU_DEVICE(int i, int j, int k, int n){
+      Print() << "(" << i << ", " << j << ", " << k << ", " << n << ")--" << fab_array(i,j,k,n) << '\t';
+    });
+  }*/
   //Print() << func3D.getElement(1,1,1,0) << '\n';
 
-  Print() << func3D_mfab.getElement(1,1,1,0) << '\n';
+  /*Print() << func3D_mfab.getElement(1,1,1,0) << '\n';
   func3D_mfab.add(func3D_weight);
   Print() << func3D_mfab.getElement(1,1,1,0) << '\n';
-  //func3D_mfab.integral3D(func3D_weight);
+
+  // The function returns a single scalar (Real) value, which is the sum of the products of corresponding elements in the specified components of x and y;
+  Print() << "multifab dot(): " << amrex::MultiFab::Dot(rho_eq, 0, Imfab, 0, 1, 0) << '\n';
+  Print() << "multifab sum() " << rho_eq.sum() << '\n';
+  // element-wise scaling amrex::MultiFab::Multiply(MultiFab& dst, const MultiFab& src, int srccomp, int dstcomp, int numcomp, int nghost)
+  amrex::MultiFab::Multiply(rho_eq, Imfab, 0, 0, 1, 0);
+  Print() << "after multifab Multiply() " << rho_eq.sum() << '\n';*/
+  func3D_mfab.mult(2.);
+  Print() << "rho_eq scaled by values using mult(): " << func3D_mfab.getMultiFab().sum() << '\n';
+  func3D_mfab.add(1.);
+  Print() << "rho_eq added by values using add(): " << func3D_mfab.getMultiFab().sum() << "(above result +" << nx << "^3=" << pow(nx, 3.) << ")\n";
+  
+  Print() << "Integral = " << func3D.integral3D() << " & analytical result = " << 1./27. << '\n';
+  // func3D = Function3DAMReX(ba, geom, dm, func3D_test);
+  Print() << "Integral = " << func3D.integral3D(func3D_weight) << " & analytical result = " << 1./27. << '\n';
+  
 
 
   //Print() << func3D_mfab.getBoxArray() << '\n';
