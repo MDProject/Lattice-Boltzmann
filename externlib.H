@@ -6,6 +6,7 @@
 #include <vector>
 #include <string>
 #include <cmath>
+#include <stdexcept>
 #include "AMReX_FileIO.H"
 #include <AMReX_FabArray.H>
 #include "AMReX_FileIO.H"
@@ -29,7 +30,7 @@
 
 
 Real func3D_test(Real x, Real y, Real z, int n){
-    return x*x * y*y * z*z;
+    return 1.;//x; //x*x * y*y * z*z;
 }
 
 class Function3DAMReX;  // forward declaration allows you to use pointers (and references) to that class without yet having the whole class definition.
@@ -146,11 +147,9 @@ class Function3DAMReX{
 
         MultiFab func_mfab;
     public:
-        Function3DAMReX(const BoxArray& ba_, const Geometry& geom_, const DistributionMapping&
-    dm_, Real (*func) (Real, Real, Real, int), int ncomp_, int ngrow_);
+        Function3DAMReX(BoxArray ba_, Geometry geom_, DistributionMapping dm_, Real (*func) (Real, Real, Real, int), int ncomp_, int ngrow_);
 
-        Function3DAMReX(const BoxArray& ba_, const Geometry& geom_, const DistributionMapping&
-    dm_, int ngrow_, Real*** dataPtr); // 1 component total, constructed from 3D array with same size of Box;
+        Function3DAMReX(BoxArray ba_, Geometry geom_, DistributionMapping dm_, int ngrow_, Real*** dataPtr); // 1 component total, constructed from 3D array with same size of Box;
 
         Function3DAMReX(const MultiFab& mfab, const Geometry& geom_) {
             ba = mfab.boxArray();
@@ -208,9 +207,20 @@ class Function3DAMReX{
 
         Real integral3D(Real*** weightTensor=NULL);
 
+        void fillPeriodicBC(){  func_mfab.FillBoundary(geom.periodicity()); }
+        
+        void convertNodal2Cell();
+        void convertCell2Nodal(bool ifPeriodic);
+
+        // Remove Overlapping Regions for nodal-centered data; 
+        //  This function WILL MODIFY original boxArray passed in for the constructor; 
+        //  i.e., when calling "Function3DAMReX(BoxArray ba_, ...)", though ba_ is passed in by value, it will be affected by this function;
+        void makeDivision();    
+        void invmakeDivision(); // inverse operation of function makeDivision();
+
 };
 
-Function3DAMReX::Function3DAMReX(const BoxArray& ba_, const Geometry& geom_, const DistributionMapping&
+Function3DAMReX::Function3DAMReX(BoxArray ba_, Geometry geom_, DistributionMapping
     dm_, int ngrow_, Real*** dataPtr){
     
     ba = ba_;
@@ -225,14 +235,11 @@ Function3DAMReX::Function3DAMReX(const BoxArray& ba_, const Geometry& geom_, con
 
         ParallelFor(bx, [=] AMREX_GPU_DEVICE(int i, int j, int k){
             mf_array(i,j,k,0) = dataPtr[i][j][k];
-            /*if(mf_array(i,j,k,0) != 1){
-                Print() << i << "--" << j << "--" << k << '\t';
-            }*/
         });
     }
 }
 
-Function3DAMReX::Function3DAMReX(const BoxArray& ba_, const Geometry& geom_, const DistributionMapping&
+Function3DAMReX::Function3DAMReX(BoxArray ba_, Geometry geom_, DistributionMapping
     dm_, Real (*func) (Real, Real, Real, int), int ncomp_=1, int ngrow_=0) : ncomp(ncomp_), ngrow(ngrow_){
             
     ba = ba_;
@@ -240,13 +247,24 @@ Function3DAMReX::Function3DAMReX(const BoxArray& ba_, const Geometry& geom_, con
     dm = dm_; 
     ngrow = ngrow_;
     ncomp = ncomp_;
+    //  IndexType typ({AMREX_D_DECL(1,1,1)}); // nodal
     // ************     to be consistent with Trapezoid formula     ************
     const IntVect box = geom.Domain().length();
     RealBox real_box = geom.ProbDomain();
     Real Lx = real_box.hi(0) - real_box.lo(0);
     Real Ly = real_box.hi(1) - real_box.lo(1);
     Real Lz = real_box.hi(2) - real_box.lo(2);
-    const Array<Real, 3> cell_size = {Lx/(box[0]-1), Ly/(box[1]-1), Lz/(box[2]-1)};
+    IndexType itype = ba.ixType(); // using Box or BoxArray;
+    Print() << itype[0] << '-' << itype[1] << '\n';
+    Array<Real, 3> cell_size;
+    if(itype.cellCentered()){
+        Print() << "cell centered\n";
+        cell_size = {Lx/box[0], Ly/box[1], Lz/box[2]};
+        //cell_size = {Lx/(box[0]-1), Ly/(box[1]-1), Lz/(box[2]-1)};
+    }else if(itype.nodeCentered()){
+        cell_size = {Lx/(box[0]-1), Ly/(box[1]-1), Lz/(box[2]-1)};
+        Print() << "nodal centered\n";
+    }
     
     func_mfab.define(ba, dm, ncomp, ngrow); // Allocating multifab object;
     for(amrex::MFIter mfi(func_mfab); mfi.isValid(); ++mfi){
@@ -254,7 +272,9 @@ Function3DAMReX::Function3DAMReX(const BoxArray& ba_, const Geometry& geom_, con
         amrex::Array4<amrex::Real> const& mf_array = func_mfab.array(mfi);
 
         ParallelFor(bx, ncomp, [=] AMREX_GPU_DEVICE(int i, int j, int k, int n){
-            mf_array(i,j,k,n) = func(i*cell_size[0],j*cell_size[1],k*cell_size[2],n);
+            //mf_array(i,j,k,n) = func(i*cell_size[0],j*cell_size[1],k*cell_size[2],n);
+            mf_array(i,j,k,n) = func((i+0.5*(1-itype[0]))*cell_size[0],(j+0.5*(1-itype[1]))*cell_size[1],(k+0.5*(1-itype[2]))*cell_size[2],n);
+            //printf("Nodal(%d,%d,%d) = %f\t",i,j,k,mf_array(i,j,k,n));
         });
     }
 }
@@ -282,6 +302,7 @@ void Function3DAMReX::add(const Real scalar){
     func_mfab.plus(scalar, 0, ncomp);
 }
 
+// overlapping points in nodal-centered data will NOT affect the amrex::Multiply operations;
 void Function3DAMReX::mult(const Function3DAMReX& func3D){
     const MultiFab& mfab_mult = func3D.getMultiFab();
     amrex::MultiFab::Multiply(func_mfab, mfab_mult, 0, 0, ncomp, 0); // using library provided by AMReX;
@@ -292,15 +313,45 @@ void Function3DAMReX::mult(const Real scalar){
 }
 
 Real Function3DAMReX::sum(const int compIdx){
-    if(compIdx>=0){
-        return func_mfab.sum(compIdx);
+    IndexType itype = ba.ixType();
+    if(itype.nodeCentered()){ // remove overlapping grid points' effect
+    //  Basic idea is:  remove overlaps & restore the original amrex data structure;
+        //Print() << ba << '\n';
+        this->makeDivision();
+        //Print() << ba << '\n';
+        //Print() << func_mfab.boxArray() << '\n';
     }else{
-        Real sumVal = 0.;
-        for(int n=0; n<ncomp; n++){
-            sumVal = sumVal + func_mfab.sum(n);
+        if(!itype.cellCentered()){
+            throw runtime_error("sum() only supports either nodal-centered or cell-centered data!\n");
         }
-        return sumVal;
     }
+
+    Real sumVal = 0.;
+    if(compIdx>=0){
+        for (MFIter mfi(func_mfab); mfi.isValid(); ++mfi) {
+            const Box& valid_box = mfi.validbox();
+            Array4<Real> const& nodal_arr = func_mfab.array(mfi);
+            ParallelFor(valid_box, [&] AMREX_GPU_DEVICE(int i, int j, int k){     
+                printf("Nodal(%d,%d,%d)=%f\t",i,j,k,nodal_arr(i,j,k,compIdx));
+                sumVal = sumVal + nodal_arr(i,j,k,compIdx);
+            });
+        }
+    }else{
+        for (MFIter mfi(func_mfab); mfi.isValid(); ++mfi) {
+            const Box& valid_box = mfi.validbox();
+            Array4<Real> const& nodal_arr = func_mfab.array(mfi);
+            ParallelFor(valid_box, ncomp, [&] AMREX_GPU_DEVICE(int i, int j, int k, int n){     
+                sumVal = sumVal + nodal_arr(i,j,k,n);
+            });
+        }
+    }
+    
+    if(itype.nodeCentered()){ // recover overlapping grid points' effect if possible;
+        this->invmakeDivision();
+    }
+    Print() << "ba in sum(): " << func_mfab.boxArray() << '\n';
+    Print() << "sum in sum(): " << sumVal << '\n';
+    return sumVal;
 }
 
 void Function3DAMReX::setElement(Real val, int x, int y, int z, int n){
@@ -344,27 +395,36 @@ Real Function3DAMReX::integral3D(const Function3DAMReX& func_multiplicand, Real*
 
 Real Function3DAMReX::integral3D(Real*** weightTensor){
     Function3DAMReX func_copy(func_mfab, geom);
+    IndexType itype = ba.ixType();
     Real*** wt = weightTensor;
-    if(wt == NULL){
-        Print() << "weight matrix initialized" << '\n';
-        Integration::trapezoid3DWeightTensor(geom.Domain(), &wt);
+    if(itype.nodeCentered()){
+        if(wt == NULL){
+            Print() << "weight matrix initialized" << '\n';
+            Integration::trapezoid3DWeightTensor(geom.Domain(), &wt);
+        }
+        Function3DAMReX func_weight(ba, geom, dm, ngrow, wt); // cannot use reference here;
+        func_copy.mult(func_weight);    //MultiFab& func_mfab_copy = func_copy.getMultiFab();
     }
-    Function3DAMReX func_weight(ba, geom, dm, ngrow, wt); // cannot use reference here;
     //WriteMultiFabToPlainText('z', weight_mfab, "./Deb");
     
-    // ****** The index type in AMReX is Cell-Centered by default, so here we need to modify the cell-size to be consistent with Trapezoid formula ******
     const IntVect box = geom.Domain().length();
     RealBox real_box = geom.ProbDomain();
     Real Lx = real_box.hi(0) - real_box.lo(0);
     Real Ly = real_box.hi(1) - real_box.lo(1);
     Real Lz = real_box.hi(2) - real_box.lo(2);
-    const Array<Real, 3> cell_size = {Lx/(box[0]-1), Ly/(box[1]-1), Lz/(box[2]-1)};
+    //Print() << itype << '-' << box << '\n';
+    Array<Real, 3> cell_size;
+    if(itype.cellCentered()){
+        //cell_size = {Lx/(box[0]-1), Ly/(box[1]-1), Lz/(box[2]-1)};
+        cell_size = {Lx/box[0], Ly/box[1], Lz/box[2]};
+    }else if(itype.nodeCentered()){
+        cell_size = {Lx/(box[0]-1), Ly/(box[1]-1), Lz/(box[2]-1)};
+    }
     Real cell_volume = cell_size[0]*cell_size[1]*cell_size[2];
-
-    func_copy.mult(func_weight);
+    Print() << "Cell Size: " << cell_size << '\n';
     Real val = func_copy.sum(0);
-    /*// Or implemented by definition
-    Real val = 0.;
+    // Or implemented by definition
+    /*Real val = 0.;
     for(amrex::MFIter mfi(func_mfab); mfi.isValid(); ++mfi){
         const amrex::Box& bx = mfi.validbox();
         amrex::Array4<amrex::Real> const& mf_array = func_mfab.array(mfi);
@@ -374,6 +434,114 @@ Real Function3DAMReX::integral3D(Real*** weightTensor){
         });
     }*/
     return val*cell_volume;
+}
+
+void Function3DAMReX::convertNodal2Cell(){
+    // MultiFab copy for original data; By default it is nodal-centered;
+    MultiFab func_mfab_copy;
+    func_mfab_copy.define(ba, dm, ncomp, ngrow);
+    func_mfab_copy.ParallelCopy(func_mfab);
+
+    // convert(func_mfab.boxArray(), IntVect::TheNodeVector()); // does not change dm;
+    // !!!!!!!!!!!!!!!  UPDATING boxArray & Geometry    !!!!!!!!!!!!!!!
+    ba = convert(ba, IntVect::TheCellVector());
+    // Get the physical domain (RealBox)
+    const RealBox& physical_domain = geom.ProbDomain();
+    const Array<int, AMREX_SPACEDIM> is_periodic = {geom.isPeriodic(0), geom.isPeriodic(1), geom.isPeriodic(2)};
+    geom.define(ba.minimalBox(), physical_domain, CoordSys::cartesian, is_periodic);
+
+    func_mfab.define(ba, dm, ncomp, ngrow);
+    Print() << "node to cell boxArray: " << func_mfab.boxArray() << '\n';
+    for (MFIter mfi(func_mfab); mfi.isValid(); ++mfi) {
+        const Box& valid_box = mfi.validbox();
+    
+        Array4<Real> const& node_arr = func_mfab_copy.array(mfi); // This function include ghost layers by default;
+        Array4<Real> const& cell_arr = func_mfab.array(mfi);
+
+        ParallelFor(valid_box, ncomp, [=] AMREX_GPU_DEVICE(int i, int j, int k, int n){
+            cell_arr(i, j, k, n) = 0.125 * (node_arr(i, j, k, n) + node_arr(i + 1, j, k, n) + node_arr(i, j + 1, k, n) +
+                node_arr(i, j, k + 1, n) + node_arr(i + 1, j + 1, k, n) + node_arr(i + 1, j, k + 1, n) + node_arr(i, j + 1, k + 1, n) + node_arr(i + 1, j + 1, k + 1, n));
+        });
+    }
+}
+
+void Function3DAMReX::convertCell2Nodal(bool ifPeriodic=true){
+    // MultiFab copy for original data; By default it is cell-centered;
+    MultiFab func_mfab_copy;
+    func_mfab_copy.define(ba, dm, ncomp, ngrow+1);  // to ensure the cell-centered data will include ghost cells;
+
+    func_mfab_copy.ParallelCopy(func_mfab);
+    func_mfab_copy.FillBoundary(geom.periodicity());
+
+    // !!!!!!!!!! UPDATING boxArray & Geometry  !!!!!!!!!!!!!!!
+    ba = convert(ba, IntVect::TheNodeVector());
+    // Get the physical domain (RealBox)
+    const RealBox& physical_domain = geom.ProbDomain();
+    const Array<int, AMREX_SPACEDIM> is_periodic = {geom.isPeriodic(0), geom.isPeriodic(1), geom.isPeriodic(2)};
+    geom.define(ba.minimalBox(), physical_domain, CoordSys::cartesian, is_periodic);
+
+    // convert(func_mfab.boxArray(), IntVect::TheNodeVector()); // does not change dm;
+    func_mfab.define(ba, dm, ncomp, ngrow);
+    //Print() << func_mfab.boxArray() << "ghost layer = " << ngrow << '\n';
+
+    for (MFIter mfi(func_mfab); mfi.isValid(); ++mfi) {
+        //const Box& node_box = amrex::convert(mfi.validbox(), IntVect::TheNodeVector()); // here the input params are constant reference &;
+        const Box& valid_box = mfi.validbox();
+        const amrex::Box& ghost_box = amrex::grow(valid_box, 1); 
+    
+        Array4<Real> const& cell_arr = func_mfab_copy.array(mfi); // This function include ghost layers by default;
+        Array4<Real> const& node_arr = func_mfab.array(mfi);
+
+        ParallelFor(valid_box, ncomp, [=] AMREX_GPU_DEVICE(int i, int j, int k, int n){
+            node_arr(i, j, k, n) = 0.125 * (cell_arr(i, j, k, n) + cell_arr(i - 1, j, k, n) + cell_arr(i, j - 1, k, n) +
+                cell_arr(i, j, k - 1, n) + cell_arr(i - 1, j - 1, k, n) + cell_arr(i - 1, j, k - 1, n) + cell_arr(i, j - 1, k - 1, n) + cell_arr(i - 1, j - 1, k - 1, n));
+        });
+    }
+}
+
+void Function3DAMReX::makeDivision(){
+    IndexType itype = ba.ixType();
+    Box domain_nodal = geom.Domain();
+    if(itype.nodeCentered()){ // remove overlapping grid points' effect
+    //  Basic idea is:  remove overlaps by shrinking the bigEnd points of each box within boxArray;
+        for (int i = 0; i < ba.size(); ++i) {
+            Box box = ba[i];   // operator [] return temporary object, so CANNOT directly modify the boxes within boxArray;
+            // Box& boxref = ba[i]; THIS CANNOT be compiled; Binding non-constant reference to temporary object box;
+            // Remove the overlap by shrinking the box on its upper boundaries
+            for (int dim = 0; dim < AMREX_SPACEDIM; ++dim) {
+                if (box.bigEnd(dim) == domain_nodal.bigEnd(dim)){
+                    continue; // Keep domain boundary
+                }else{
+                    box.growHi(dim, -1);  // Shrink the upper boundary to avoid overlap
+                    ba.set(i, box);
+                }
+            }
+        }
+    }else{
+        throw runtime_error("makeDivision() only supports nodal-centered data!\n");
+    }
+}
+
+void Function3DAMReX::invmakeDivision(){
+    IndexType itype = ba.ixType();
+    Box domain_nodal = geom.Domain();
+    if(itype.nodeCentered()){ // recover overlapping grid points
+        for (int i = 0; i < ba.size(); ++i) {
+            Box box = ba[i];   // operator [] return temporary object, so CANNOT directly modify the boxes within boxArray;
+            // Box& boxref = ba[i]; THIS CANNOT be compiled; Binding non-constant reference to temporary object box;
+            // Remove the overlap by shrinking the box on its upper boundaries
+            for (int dim = 0; dim < AMREX_SPACEDIM; ++dim) {
+                if (box.bigEnd(dim) == domain_nodal.bigEnd(dim)){
+                    continue; // Keep domain boundary
+                }else{
+                    box.growHi(dim, 1);  // Shrink the upper boundary to avoid overlap
+                    ba.set(i, box);
+                }
+            }
+        }
+    }else{
+        throw runtime_error("makeDivision() only supports nodal-centered data!\n");
+    }
 }
 
 
@@ -547,7 +715,7 @@ double integral_func1_series(int n, double a, int N=100) {
 #endif
 
 
-/**************         Examples       ************    
+/**************         Examples using integral3D      ************    
   Function3DAMReX func3D(ba, geom, dm, func3D_test);
   Function3DAMReX func3D_mfab(rho_eq, geom);
   MultiFab Imfab(ba, dm, 1, nghost);  Imfab.setVal(1.);
@@ -570,5 +738,143 @@ double integral_func1_series(int n, double a, int N=100) {
   Print() << "rho_eq scaled by values using mult(): " << func3D_mfab.getMultiFab().sum() << '\n';
   func3D_mfab.add(1.);
   Print() << "rho_eq added by values using add(): " << func3D_mfab.getMultiFab().sum() << "(above result +" << nx << "^3=" << pow(nx, 3.) << ")\n";
+
   Print() << "Integral = " << func3D.integral3D() << " & analytical result = " << 1./27. << '\n';
+  // func3D = Function3DAMReX(ba, geom, dm, func3D_test);
+  Print() << "Integral = " << func3D.integral3D(func3D_weight) << " & analytical result = " << 1./27. << '\n';
 *******************************************************/
+
+/************** understand periodic boundary condition in AMReX ************** 
+  // default grid parameters; examples of 4*4*4 cells total, divided into FArrayBox of size 2*2*2; 
+  int nx = 4;
+  int max_grid_size = 2;
+  IntVect dom_lo(0, 0, 0);
+  IntVect dom_hi(nx-1, nx-1, nx-1);
+  Array<int,3> periodicity({1,1,1});
+  Box domain(dom_lo, dom_hi);
+  RealBox real_box({0.,0.,0.},{1.,1.,1.});
+  
+  Geometry geom(domain, real_box, CoordSys::cartesian, periodicity);
+  BoxArray ba(domain);
+  ba.maxSize(max_grid_size);
+  DistributionMapping dm(ba);
+
+  //    test function to show periodicity;  Thus RealBox has interval = (1./3, 1./3, 1./3);
+  Real func3D_test(Real x, Real y, Real z, int n){
+    return (x-0.5)*(x-0.5)+(y-0.5)*(y-0.5)+(z-0.5)*(z-0.5);   //x*x * y*y * z*z;
+  }   
+
+  
+  Function3DAMReX func3D(ba, geom, dm, func3D_test, 1, 1);
+  func3D.fillPeriodicBC();
+  Function3DAMReX func3D_mfab(rho_eq, geom);
+  MultiFab Imfab(ba, dm, 1, nghost);  Imfab.setVal(1.);
+  MultiFab& func_mfab = func3D.getMultiFab();
+  Function3DAMReX func3D_weight(Imfab, geom);
+
+  const IntVect box = geom.Domain().length();
+  MultiFab& test_mfab_cell = func3D.getMultiFab();
+  MultiFab test_mfab_nodal(convert(test_mfab_cell.boxArray(), IntVect::TheNodeVector()), dm, test_mfab_cell.nComp(), 0);
+  for (MFIter mfi(test_mfab_cell); mfi.isValid(); ++mfi) {
+    const Box& node_box = amrex::convert(mfi.validbox(), IntVect::TheNodeVector()); // here the input params are constant reference &;
+    const Box& valid_box = mfi.validbox();
+    const amrex::Box& ghost_box = amrex::grow(valid_box, 1);
+    
+    Array4<Real> const& cell_arr = test_mfab_cell.array(mfi);
+    Array4<Real> const& node_arr = test_mfab_nodal.array(mfi);
+
+    Print() << cell_arr << " ghost: " << test_mfab_cell.nGrow() << '\n';
+    Print() << node_arr << '\n';
+    Print() << ghost_box << '\n';
+    //  Periodicity Check
+    ParallelFor(ghost_box, 1, [=] AMREX_GPU_DEVICE(int i, int j, int k, int n){
+      int i_shift = i;  int j_shift = j;  int k_shift = k;
+      //Print() << "Outside of geometry ghost cells check:" << '\n';
+      if(i_shift < 0){
+        i_shift = i_shift + box[0];
+      }
+      if(j_shift < 0){
+        j_shift = j_shift + box[1];
+      }
+      if(k_shift < 0){
+        k_shift = k_shift + box[2];
+      }
+      if(i_shift >= box[0]){
+        i_shift = i_shift - box[0];
+      }
+      if(j_shift >= box[1]){
+        j_shift = j_shift - box[1];
+      }
+      if(k_shift >= box[2]){
+        k_shift = k_shift - box[2];
+      }
+      printf("Cell(%d,%d,%d) - Cell(%d,%d,%d) = %f\n", i_shift, j_shift, k_shift, i, j, k, 
+      (pow(i_shift*1./3.-0.5, 2.)+pow(j_shift*1./3.-0.5, 2.)+pow(k_shift*1./3.-0.5, 2.)) - cell_arr(i, j, k, n));
+      if(!valid_box.contains(IntVect(i, j, k)) && geom.Domain().contains(IntVect(i, j, k))){
+        printf("Inner ghost Cell(%d,%d,%d) - analytical_val = %f\n", i, j, k, cell_arr(i, j, k, n) - (pow(i*1./3.-0.5, 2.)+pow(j*1./3.-0.5, 2.)+pow(k*1./3.-0.5, 2.)));
+      }
+    });
+
+
+    /*    test function to show linear interpolation;  Thus RealBox has interval = (1./3, 1./3, 1./3);
+    Real func3D_test(Real x, Real y, Real z, int n){
+        return x+y+z;   //x*x * y*y * z*z;
+    }   */
+    /*ParallelFor(node_box, 1, [=] AMREX_GPU_DEVICE(int i, int j, int k, int n){
+      node_arr(i, j, k, n) = 0.125 * (cell_arr(i, j, k, n) + cell_arr(i - 1, j, k, n) + cell_arr(i, j - 1, k, n) +
+                cell_arr(i, j, k - 1, n) + cell_arr(i - 1, j - 1, k, n) + cell_arr(i - 1, j, k - 1, n) + cell_arr(i, j - 1, k - 1, n) + cell_arr(i - 1, j - 1, k - 1, n));
+      printf("Nodal(%d,%d,%d) = %f\tCell(%d,%d,%d) = %f\n", i, j, k, node_arr(i, j, k, n), i, j, k, cell_arr(i, j, k, n));
+    });
+  }
+*/
+
+/***********    example for convert Cell to Nodal ***********
+  Function3DAMReX func3D(ba, geom, dm, func3D_test, 1, 1);
+  Function3DAMReX func3D2(ba, geom, dm, func3D_test, 1, 1);
+  func3D2.fillPeriodicBC(); MultiFab& func_mfab_cell = func3D2.getMultiFab(); func_mfab_cell.FillBoundary(geom.periodicity());
+
+  func3D.fillPeriodicBC();
+  func3D.convertCell2Nodal();
+
+  Function3DAMReX func3D_mfab(rho_eq, geom);
+  MultiFab Imfab(ba, dm, 1, nghost);  Imfab.setVal(1.);
+  
+  Function3DAMReX func3D_weight(Imfab, geom);
+
+  const IntVect box = geom.Domain().length();
+  MultiFab& test_mfab_cell2nodal = func3D.getMultiFab();
+  //MultiFab test_mfab_nodal(convert(test_mfab_cell.boxArray(), IntVect::TheNodeVector()), dm, test_mfab_cell.nComp(), 0);
+
+  IndexType itype = func3D.getMultiFab().boxArray().ixType();
+  Print() << itype << '\n';
+
+  for (MFIter mfi(test_mfab_cell2nodal); mfi.isValid(); ++mfi) {
+    //const Box& node_box = amrex::convert(mfi.validbox(), IntVect::TheNodeVector()); // here the input params are constant reference &;
+    const Box& node_box = mfi.validbox();
+
+    Array4<Real> const& node_arr = test_mfab_cell2nodal.array(mfi); 
+    Array4<Real> const& cell_arr = func_mfab_cell.array(mfi);
+
+    ParallelFor(node_box, 1, [&] AMREX_GPU_DEVICE(int i, int j, int k, int n){
+      printf("Nodal(%d,%d,%d) = %f\tCell value(%d,%d,%d)(%d,%d,%d)(%d,%d,%d)(%d,%d,%d)(%d,%d,%d)(%d,%d,%d)(%d,%d,%d)(%d,%d,%d)= %f, %f, %f, %f, %f, %f, %f, %f\n",
+      i,j,k, node_arr(i,j,k,0), i,j,k, i - 1, j, k,i, j - 1, k,i, j, k - 1,i - 1, j - 1, k,i - 1, j, k - 1,i, j - 1, k - 1,i - 1, j - 1, k - 1,
+      cell_arr(i, j, k, n) , cell_arr(i - 1, j, k, n) , cell_arr(i, j - 1, k, n) ,
+                cell_arr(i, j, k - 1, n) , cell_arr(i - 1, j - 1, k, n) , cell_arr(i - 1, j, k - 1, n) , cell_arr(i, j - 1, k - 1, n) , cell_arr(i - 1, j - 1, k - 1, n));
+    });
+  }
+
+  ********/
+
+ /*************     seems change the boxArray will not affect the sum() values ???
+Print() << '\n' << "SUM: " << func3D2_mfab.sum(0) << '\n';  
+  func3D2.makeDivision();
+  Print() << "modified nodal center boxarray: " << ba2 << '\n';
+  Print() << "modified nodal center boxarray: " << func3D2.getBoxArray() << '\n';
+  Print() << "modified nodal center boxarray: " << func3D2.getMultiFab().boxArray() << '\n';
+  Print() << '\n' << "SUM: " << func3D2_mfab.sum(0) << '\n';  
+  func3D2.makeDivision();
+  Print() << "modified nodal center boxarray: " << ba2 << '\n';
+  Print() << "modified nodal center boxarray: " << func3D2.getBoxArray() << '\n';
+  Print() << "modified nodal center boxarray: " << func3D2.getMultiFab().boxArray() << '\n';
+  Print() << '\n' << "SUM: " << func3D2_mfab.sum(0) << '\n'; 
+  * **************/

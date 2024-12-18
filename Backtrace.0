@@ -4,13 +4,31 @@
 
  2: _sigtramp (in libsystem_platform.dylib) + 29
 
- 4: std::__1::enable_if<IsFabArray<amrex::MultiFab>::value, void>::type amrex::experimental::detail::ParallelFor<amrex::MultiFab, LBM_hydrovars_modified(amrex::MultiFab&, amrex::MultiFab&, amrex::MultiFab&)::'lambda'(int, int, int, int)>(amrex::MultiFab const&, amrex::IntVectND<3> const&, amrex::IntVectND<3> const&, bool, LBM_hydrovars_modified(amrex::MultiFab&, amrex::MultiFab&, amrex::MultiFab&)::'lambda'(int, int, int, int) const&) (in main3d.gnu.MPI.ex) (AMReX_MFParallelForC.H:26)
+ 4: abort (in libsystem_c.dylib) + 126
 
- 5: LBM_timestep(amrex::Geometry const&, amrex::MultiFab&, amrex::MultiFab&, amrex::MultiFab&, amrex::MultiFab&, amrex::MultiFab&, amrex::MultiFab&, amrex::MultiFab&, amrex::MultiFab&) (in main3d.gnu.MPI.ex) (LBM_binary.H:593)
+ 5: malloc_vreport (in libsystem_malloc.dylib) + 857
 
- 6: main_driver(char const*) (in main3d.gnu.MPI.ex) (main_driver.cpp:0)
+ 6: malloc_zone_error (in libsystem_malloc.dylib) + 183
 
- 7: main (in main3d.gnu.MPI.ex) (main.cpp:25)
+ 7: tiny_free_list_remove_ptr (in libsystem_malloc.dylib) + 566
 
- 8: start (in dyld) + 1942
+ 8: tiny_free_no_lock (in libsystem_malloc.dylib) + 690
+
+ 9: free_tiny (in libsystem_malloc.dylib) + 526
+
+10: amrex::BaseFab<double>::clear() (in main3d.gnu.MPI.ex) (AMReX_BaseFab.H:2186)
+
+11: amrex::FArrayBox::~FArrayBox() (in main3d.gnu.MPI.ex) (AMReX_FArrayBox.H:266)
+
+12: amrex::FabArray<amrex::FArrayBox>::clear() (in main3d.gnu.MPI.ex) (AMReX_FabArray.H:0)
+
+13: amrex::FabArray<amrex::FArrayBox>::~FabArray() (in main3d.gnu.MPI.ex) (AMReX_FabArray.H:1988)
+
+14: Function3DAMReX::integral3D(double***) (in main3d.gnu.MPI.ex) (externlib.H:448)
+
+15: main_driver(char const*) (in main3d.gnu.MPI.ex) (main_driver.cpp:258)
+
+16: main (in main3d.gnu.MPI.ex) (main.cpp:25)
+
+17: start (in dyld) + 1942
 

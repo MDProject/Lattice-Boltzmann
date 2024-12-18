@@ -104,8 +104,8 @@ void main_driver(const char* argv) {
   Real strt_time = ParallelDescriptor::second();
     
   // default grid parameters
-  int nx = 40;
-  int max_grid_size = 8;
+  int nx = 4;//16; //40;
+  int max_grid_size = 2;//2;//8;
 
   // default time stepping parameters
   int nsteps = 300;
@@ -183,11 +183,82 @@ void main_driver(const char* argv) {
   }
   
   //***********
-  Function3DAMReX func3D(ba, geom, dm, func3D_test);
+  // construct cell-centered function;
+  Function3DAMReX func3D(ba, geom, dm, func3D_test, 1, 1);  MultiFab& func3D_cell_mfab = func3D.getMultiFab();
+  for (MFIter mfi(func3D_cell_mfab); mfi.isValid(); ++mfi) {
+    const Box& valid_box = mfi.validbox();
+    ParallelFor(valid_box, 1, [=] AMREX_GPU_DEVICE(int i, int j, int k, int n){
+            printf("Cell(%d,%d,%d)\t",i,j,k);
+        });
+  }
+  // construct nodal-centered function;
+  IntVect dom_lo2(0, 0, 0);
+  IntVect dom_hi2(nx-1, nx-1, nx-1);
+  Box domain2(dom_lo2, dom_hi2);
+  //Print() << domain2 << '\n';
+  domain2 = amrex::convert(domain2, IndexType({1, 1, 1}));
+  //Print() << domain2 << '\n';
+  Geometry geom2(domain2, real_box, CoordSys::cartesian, periodicity);
+  BoxArray ba2(domain2);
+  ba2.maxSize(max_grid_size);
+  DistributionMapping dm2(ba2);
+  Function3DAMReX func3D2(ba2, geom2, dm2, func3D_test, 1, 1);  MultiFab& func3D2_mfab = func3D2.getMultiFab();
+  // split BoxArray into chunks no larger than "max_grid_size" along a direction
+  
+
+  Print() << "Cell & Nodal -centered data boxArrays:\n";
+  Print() << ba << '\n';
+  Print() << ba2 << '\n';
+  Print() << dm2 << '\n';
+
+  Print() << "change boxArray in function will affect the original boxArray variable and boxArray property in MultiFab \n";
+  func3D2.makeDivision(); //func3D2.invmakeDivision();
+  
+  Print() << "modified nodal center boxarray: " << ba2 << '\n';
+  Print() << dm2 << '\n';
+  Print() << "modified nodal center boxarray: " << func3D2.getBoxArray() << '\n';
+  Print() << "modified nodal center boxarray: " << func3D2.getMultiFab().boxArray() << '\n';
+  
+  func3D2.invmakeDivision();
+  Print() << '\n' << "SUM: " << func3D2_mfab.sum(0) << '\n';
+  //func3D2.invmakeDivision();    // If PUTTING HERE, the integral3D will have wrong results! why??????
+  
+
+  /*for (MFIter mfi(func3D2_mfab); mfi.isValid(); ++mfi) {
+    const Box& valid_box = mfi.validbox();
+    Array4<Real> const& nodal_arr = func3D2_mfab.array(mfi);
+    ParallelFor(valid_box, 1, [=] AMREX_GPU_DEVICE(int i, int j, int k, int n){
+      
+      printf("Nodal(%d,%d,%d)=%f\t",i,j,k,nodal_arr(i,j,k,n));
+            
+    });
+  }*/
+  Print() << '\n' << "SUM: " << func3D2_mfab.sum(0) << '\n';
+  Print() << '\n' << "SUM userdef(automatically performing shrinking boxes within boxArray): " << func3D2.sum(0) << '\n';
+
+  func3D.fillPeriodicBC();
+  func3D2.convertCell2Nodal();
+  func3D2.convertNodal2Cell();
+
+  Print() << func3D2.getBoxArray() << '\n';
+  Print() << func3D.integral3D() << " & analytical result = " << 1. << '\n';
+  //func3D2.invmakeDivision();
+  Print() << "modified nodal center boxarray: " << ba2 << '\n';
+  Print() << "modified nodal center boxarray: " << func3D2.getBoxArray() << '\n';
+  MultiFab Imfab(ba2, dm2, 1, 1);  Imfab.setVal(1.); Function3DAMReX func3D_Identity(Imfab, geom2);
+
+  //func3D2.makeDivision(); func3D2.invmakeDivision();
+  //func3D2.mult(func3D_Identity);
+  Print() << func3D2.integral3D() << " & analytical result = " << 1. << '\n';
+
   Function3DAMReX func3D_mfab(rho_eq, geom);
-  MultiFab Imfab(ba, dm, 1, nghost);  Imfab.setVal(1.);
-  MultiFab& func_mfab = func3D.getMultiFab();
-  Function3DAMReX func3D_weight(Imfab, geom);
+  
+  
+  const IntVect box = geom.Domain().length();
+  MultiFab& test_mfab_cell2nodal = func3D.getMultiFab();
+  //MultiFab test_mfab_nodal(convert(test_mfab_cell.boxArray(), IntVect::TheNodeVector()), dm, test_mfab_cell.nComp(), 0);
+
+
 
   /*for (MFIter mfi(rho_eq); mfi.isValid(); ++mfi){
     const Box& box_with_ghost = mfi.validbox().grow(nghost); // Include ghost cells
@@ -195,10 +266,10 @@ void main_driver(const char* argv) {
     ParallelFor(box_with_ghost, rho_eq.nComp(), [=] AMREX_GPU_DEVICE(int i, int j, int k, int n){
       Print() << "(" << i << ", " << j << ", " << k << ", " << n << ")--" << fab_array(i,j,k,n) << '\t';
     });
-  }*/
+  }
   //Print() << func3D.getElement(1,1,1,0) << '\n';
 
-  /*Print() << func3D_mfab.getElement(1,1,1,0) << '\n';
+  Print() << func3D_mfab.getElement(1,1,1,0) << '\n';
   func3D_mfab.add(func3D_weight);
   Print() << func3D_mfab.getElement(1,1,1,0) << '\n';
 
@@ -207,7 +278,7 @@ void main_driver(const char* argv) {
   Print() << "multifab sum() " << rho_eq.sum() << '\n';
   // element-wise scaling amrex::MultiFab::Multiply(MultiFab& dst, const MultiFab& src, int srccomp, int dstcomp, int numcomp, int nghost)
   amrex::MultiFab::Multiply(rho_eq, Imfab, 0, 0, 1, 0);
-  Print() << "after multifab Multiply() " << rho_eq.sum() << '\n';*/
+  Print() << "after multifab Multiply() " << rho_eq.sum() << '\n';
   func3D_mfab.mult(2.);
   Print() << "rho_eq scaled by values using mult(): " << func3D_mfab.getMultiFab().sum() << '\n';
   func3D_mfab.add(1.);
@@ -215,7 +286,7 @@ void main_driver(const char* argv) {
   
   Print() << "Integral = " << func3D.integral3D() << " & analytical result = " << 1./27. << '\n';
   // func3D = Function3DAMReX(ba, geom, dm, func3D_test);
-  Print() << "Integral = " << func3D.integral3D(func3D_weight) << " & analytical result = " << 1./27. << '\n';
+  Print() << "Integral = " << func3D.integral3D(func3D_weight) << " & analytical result = " << 1./27. << '\n';*/
   
 
 
