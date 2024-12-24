@@ -11,11 +11,11 @@ using namespace amrex;
 #include "Debug.H"
 #include "AMReX_FileIO.H"
 #include "externlib.H"
-//#include "AMReX_FileIO.H"
-
+#include "AMREX_Analysis.H"
+#include "LBM_hydrovs.H"
 
 const bool tagHDF5 = false; 
-string plot_file_root = "./lbm_data_shshan_alpha0_4_xi_1e-6/plt";
+string plot_file_root = "./lbm_data_shshan_alpha0_4_xi_mass1e-5/plt";
 
 inline void WriteOutput(int step,
 			const MultiFab& hydrovs,
@@ -104,8 +104,8 @@ void main_driver(const char* argv) {
   Real strt_time = ParallelDescriptor::second();
     
   // default grid parameters
-  int nx = 4;//16; //40;
-  int max_grid_size = 2;//2;//8;
+  int nx = 16; //40;
+  int max_grid_size = 8;
 
   // default time stepping parameters
   int nsteps = 300;
@@ -166,6 +166,7 @@ void main_driver(const char* argv) {
   MultiFab phi_eq(ba, dm, 1, nghost); phi_eq.setVal(0.);
   MultiFab rhot_eq(ba, dm, 1, nghost);  rhot_eq.setVal(1.);
 
+
   bool noiseSwitch;
   if(mass==0){
     noiseSwitch = false;
@@ -181,142 +182,43 @@ void main_driver(const char* argv) {
   }else{
     Print() << "Noise switch off\n";
   }
-  
-  //***********
-  // construct cell-centered function;
-  Function3DAMReX func3D(ba, geom, dm, func3D_test, 1, 1);  MultiFab& func3D_cell_mfab = func3D.getMultiFab();
-  for (MFIter mfi(func3D_cell_mfab); mfi.isValid(); ++mfi) {
-    const Box& valid_box = mfi.validbox();
-    ParallelFor(valid_box, 1, [=] AMREX_GPU_DEVICE(int i, int j, int k, int n){
-            printf("Cell(%d,%d,%d)\t",i,j,k);
-        });
-  }
-  // construct nodal-centered function;
+  //printf("min rho_eq: %f\tmin phi_eq: %f\n", rho_eq.min(0), phi_eq.min(0));
+
   IntVect dom_lo2(0, 0, 0);
-  IntVect dom_hi2(nx-1, nx-1, nx-1);
+  IntVect dom_hi2(16-1, 16-1, 16-1);  // in python N = 17;
   Box domain2(dom_lo2, dom_hi2);
   //Print() << domain2 << '\n';
-  domain2 = amrex::convert(domain2, IndexType({1, 1, 1}));
+  domain2 = amrex::convert(domain2, IndexType({1, 1, 1}));  // in python nodal-centered data is used;
   //Print() << domain2 << '\n';
   Geometry geom2(domain2, real_box, CoordSys::cartesian, periodicity);
   BoxArray ba2(domain2);
   ba2.maxSize(max_grid_size);
   DistributionMapping dm2(ba2);
-  Function3DAMReX func3D2(ba2, geom2, dm2, func3D_test, 1, 1);  MultiFab& func3D2_mfab = func3D2.getMultiFab();
-  // split BoxArray into chunks no larger than "max_grid_size" along a direction
-  
+  Function3DAMReX func_rho(ba2, geom2, dm2, func3D_rho_test);
+  Function3DAMReX func_rho_eq(rho_eq, geom);
+  Real W0 = kappa; Real R0 = 0.3;
+  const RealVect r0 = {0.5, 0.5, 0.5};
+  Print() << "MfWn\t" << MfWn(func_rho, 0.01, 0.3, r0) << '\t' << "MfRn\t" << MfRn(func_rho, 0.01, 0.3, r0) << '\n'; // verified
+  Print() << KWn(0.01, 0.3) << '\t' << KRn(0.01, 0.3) << '\n'; // verified
+  RealVect vec_com = {0., 0., 0.};  getCenterOfMass(vec_com, func_rho); // verified
+  printf("Center of Mass:\t(%f,%f,%f)\n", vec_com[0], vec_com[1], vec_com[2]); // verified
 
-  Print() << "Cell & Nodal -centered data boxArrays:\n";
-  Print() << ba << '\n';
-  Print() << ba2 << '\n';
-  Print() << dm2 << '\n';
+  Real param_vars[2] = {0., 0.};
+  const std::vector<std::vector<Real>> combNomial = getCombNomial(4); // verified
+  const std::vector<Real> S_array = getCoefS(NumOfTerms); // verified
 
-  Print() << "change boxArray in function will affect the original boxArray variable and boxArray property in MultiFab \n";
-  func3D2.makeDivision(); //func3D2.invmakeDivision();
-  
-  Print() << "modified nodal center boxarray: " << ba2 << '\n';
-  Print() << dm2 << '\n';
-  Print() << "modified nodal center boxarray: " << func3D2.getBoxArray() << '\n';
-  Print() << "modified nodal center boxarray: " << func3D2.getMultiFab().boxArray() << '\n';
-  
-  func3D2.invmakeDivision();
-  Print() << '\n' << "SUM: " << func3D2_mfab.sum(0) << '\n';
-  //func3D2.invmakeDivision();    // If PUTTING HERE, the integral3D will have wrong results! why??????
-  
+  paramsVariations(param_vars, combNomial, S_array, func_rho, 0.01, 0.3, 0.2, 0.2, 0.02);
+  printf("param_vars:\t(dWn=%f,dRn=%f)\n", param_vars[0], param_vars[1]); // verified
 
-  /*for (MFIter mfi(func3D2_mfab); mfi.isValid(); ++mfi) {
-    const Box& valid_box = mfi.validbox();
-    Array4<Real> const& nodal_arr = func3D2_mfab.array(mfi);
-    ParallelFor(valid_box, 1, [=] AMREX_GPU_DEVICE(int i, int j, int k, int n){
-      
-      printf("Nodal(%d,%d,%d)=%f\t",i,j,k,nodal_arr(i,j,k,n));
-            
-    });
-  }*/
-  Print() << '\n' << "SUM: " << func3D2_mfab.sum(0) << '\n';
-  Print() << '\n' << "SUM userdef(automatically performing shrinking boxes within boxArray): " << func3D2.sum(0) << '\n';
-
-  func3D.fillPeriodicBC();
-  func3D2.convertCell2Nodal();
-  func3D2.convertNodal2Cell();
-
-  Print() << func3D2.getBoxArray() << '\n';
-  Print() << func3D.integral3D() << " & analytical result = " << 1. << '\n';
-  //func3D2.invmakeDivision();
-  Print() << "modified nodal center boxarray: " << ba2 << '\n';
-  Print() << "modified nodal center boxarray: " << func3D2.getBoxArray() << '\n';
-  MultiFab Imfab(ba2, dm2, 1, 1);  Imfab.setVal(1.); Function3DAMReX func3D_Identity(Imfab, geom2);
-
-  //func3D2.makeDivision(); func3D2.invmakeDivision();
-  //func3D2.mult(func3D_Identity);
-  Print() << func3D2.integral3D() << " & analytical result = " << 1. << '\n';
-
-  Function3DAMReX func3D_mfab(rho_eq, geom);
-  
-  
-  const IntVect box = geom.Domain().length();
-  MultiFab& test_mfab_cell2nodal = func3D.getMultiFab();
-  //MultiFab test_mfab_nodal(convert(test_mfab_cell.boxArray(), IntVect::TheNodeVector()), dm, test_mfab_cell.nComp(), 0);
+  std::vector<Array<Real, 2>> param_vec;
+  //fittingDropletRadius(func_rho, param_vec);
+  fittingDropletRadius(func_rho_eq, param_vec);
+  int Nstep = param_vec.size();
+  printf("Rn = %f\tWn = %f\n", param_vec[Nstep-1][1], param_vec[Nstep-1][0]);
 
 
 
-  /*for (MFIter mfi(rho_eq); mfi.isValid(); ++mfi){
-    const Box& box_with_ghost = mfi.validbox().grow(nghost); // Include ghost cells
-    auto const& fab_array = rho_eq.array(mfi);
-    ParallelFor(box_with_ghost, rho_eq.nComp(), [=] AMREX_GPU_DEVICE(int i, int j, int k, int n){
-      Print() << "(" << i << ", " << j << ", " << k << ", " << n << ")--" << fab_array(i,j,k,n) << '\t';
-    });
-  }
-  //Print() << func3D.getElement(1,1,1,0) << '\n';
-
-  Print() << func3D_mfab.getElement(1,1,1,0) << '\n';
-  func3D_mfab.add(func3D_weight);
-  Print() << func3D_mfab.getElement(1,1,1,0) << '\n';
-
-  // The function returns a single scalar (Real) value, which is the sum of the products of corresponding elements in the specified components of x and y;
-  Print() << "multifab dot(): " << amrex::MultiFab::Dot(rho_eq, 0, Imfab, 0, 1, 0) << '\n';
-  Print() << "multifab sum() " << rho_eq.sum() << '\n';
-  // element-wise scaling amrex::MultiFab::Multiply(MultiFab& dst, const MultiFab& src, int srccomp, int dstcomp, int numcomp, int nghost)
-  amrex::MultiFab::Multiply(rho_eq, Imfab, 0, 0, 1, 0);
-  Print() << "after multifab Multiply() " << rho_eq.sum() << '\n';
-  func3D_mfab.mult(2.);
-  Print() << "rho_eq scaled by values using mult(): " << func3D_mfab.getMultiFab().sum() << '\n';
-  func3D_mfab.add(1.);
-  Print() << "rho_eq added by values using add(): " << func3D_mfab.getMultiFab().sum() << "(above result +" << nx << "^3=" << pow(nx, 3.) << ")\n";
-  
-  Print() << "Integral = " << func3D.integral3D() << " & analytical result = " << 1./27. << '\n';
-  // func3D = Function3DAMReX(ba, geom, dm, func3D_test);
-  Print() << "Integral = " << func3D.integral3D(func3D_weight) << " & analytical result = " << 1./27. << '\n';*/
-  
-
-
-  //Print() << func3D_mfab.getBoxArray() << '\n';
-  //Print() << func3D_mfab.getnComp() << '\n';
-  // if use like "BoxArray& ba_func = ***", [ba_func] will not be able to be modified; Since member function return the constant reference
-  //BoxArray ba_func = func3D.getBoxArray(); 
-  //Geometry geom_func = func3D.getGeometry();
-  //func3D.setBoxArray(ba_func.maxSize(4));
-  //Print() << func3D.getBoxArray() << '\n';
-  //Print() << geom_func.Domain() << '\n';
-
-  //func3D_mfab.setElement(-1,0,0,0,0);
-  //Print() << func3D_mfab.getElement(0,0,0,0) << '\n';
-
-  //***********/
-
-  /**********
-  int n = 4;
-  Real d = 3;
-  Real c = 4;
-  int N = 15+1; // maximum order of taylor expansion terms for 1/cosh(dx-c); 15~20 for recommendation
-  std::vector<Real> coefSVec = getCoefS(N);
-  std::vector<std::vector<Real>> combVec = getCombNomial(n);
-  //Print() << integral_func2_series(n, d, c, combVec, coefSVec, 1/d) << '\n';  // different numerical precision compared with python code;
-  //Print() << integral_func3_series(3, 1.) << '\n';
-  //Print() << integral_func1_series(3, 1., 100) << '\n';
-  **********/
-
-  /************
+  /*
   // INITIALIZE
   LBM_init_droplet(radius, geom, fold, gold, hydrovs, hydrovsbar, fnoisevs, gnoisevs, rho_eq, phi_eq, rhot_eq);
   MultiFabNANCheck(hydrovs, true, 0);
@@ -367,10 +269,9 @@ void main_driver(const char* argv) {
   if(!noiseSwitch){
     WriteSingleLevelPlotfile("./equilibrium_rhot", mfab_rhot_eq, vec_varname, geom, 0, 0);  // time & step = 0 just for simplicity; meaningless here;
   }
-  ***********/
+  */
   
 }
-
 
 /*
 Visualization Tools Amrvis relies on "openmotif" on mac.

@@ -4,31 +4,15 @@
 
  2: _sigtramp (in libsystem_platform.dylib) + 29
 
- 4: abort (in libsystem_c.dylib) + 126
+ 4: Function3DAMReX::integral3D(double***) (in main3d.gnu.MPI.ex) (AMReX_Analysis.H:408)
 
- 5: malloc_vreport (in libsystem_malloc.dylib) + 857
+ 5: Function3DAMReX::integral3D(Function3DAMReX const&, double***) (in main3d.gnu.MPI.ex) (AMReX_Analysis.H:0)
 
- 6: malloc_zone_error (in libsystem_malloc.dylib) + 183
+ 6: getCenterOfMass(amrex::RealVect&, Function3DAMReX&) (in main3d.gnu.MPI.ex) (LBM_hydrovs.H:56)
 
- 7: tiny_free_list_remove_ptr (in libsystem_malloc.dylib) + 566
+ 7: main_driver(char const*) (in main3d.gnu.MPI.ex) (main_driver.cpp:203)
 
- 8: tiny_free_no_lock (in libsystem_malloc.dylib) + 690
+ 8: main (in main3d.gnu.MPI.ex) (main.cpp:25)
 
- 9: free_tiny (in libsystem_malloc.dylib) + 526
-
-10: amrex::BaseFab<double>::clear() (in main3d.gnu.MPI.ex) (AMReX_BaseFab.H:2186)
-
-11: amrex::FArrayBox::~FArrayBox() (in main3d.gnu.MPI.ex) (AMReX_FArrayBox.H:266)
-
-12: amrex::FabArray<amrex::FArrayBox>::clear() (in main3d.gnu.MPI.ex) (AMReX_FabArray.H:0)
-
-13: amrex::FabArray<amrex::FArrayBox>::~FabArray() (in main3d.gnu.MPI.ex) (AMReX_FabArray.H:1988)
-
-14: Function3DAMReX::integral3D(double***) (in main3d.gnu.MPI.ex) (externlib.H:448)
-
-15: main_driver(char const*) (in main3d.gnu.MPI.ex) (main_driver.cpp:258)
-
-16: main (in main3d.gnu.MPI.ex) (main.cpp:25)
-
-17: start (in dyld) + 1942
+ 9: start (in dyld) + 1942
 

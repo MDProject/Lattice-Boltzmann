@@ -4,6 +4,6 @@ CEXE_headers += Debug.H
 CEXE_headers += AMReX_FileIO.H
 CEXE_headers += LBM_hydrovs.H
 CEXE_headers += externlib.H
-
+CEXE_headers += AMREX_Analysis.H
 
 #CEXE_sources += CodingNote_FFT.cpp

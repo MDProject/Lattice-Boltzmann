@@ -7,15 +7,25 @@
 #include <cmath>
 
 
+
 AMREX_GPU_MANAGED Real tau_f = 1.; // tau=0.5*(1.+1./sqrt(3.)) minimizes spurious currents according to Swift et al.
 AMREX_GPU_MANAGED Real tau_g = tau_f;
 AMREX_GPU_MANAGED Real alpha0 = 4.;
 AMREX_GPU_MANAGED Real alpha1 = 0.;//alpha1;
-const Real epsilon = 1e-10;
+const Real epsilon = 1e-5;
 
 AMREX_GPU_MANAGED Real kappa = 0.01;
 
 AMREX_GPU_MANAGED Real T = 0.5;//
+
+Real equivDensityInv(Real density){
+  return 0.;
+  if(density < epsilon){
+    return 0.;
+  }else{
+    return 1./density;
+  }
+}
 
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
 Real draw_from_pdf_normal(const double& mean, const double& variance){
@@ -224,7 +234,7 @@ void hydrovars(int x, int y, int z, // real density & momentum;
   Real ratio_noisevel = 0.;
   int compMax = 0;
 
-  if(mass==0){
+  
     // **********************   WITHOUT NOISE TERM   **********************;
     h(x,y,z,2) = ufbar(0) + 0.5*afbar(0) - 0.5/(tau_f+0.5)*phi/(rho+phi)*(ufbar(0)-ugbar(0) + 0.5*(afbar(0)-agbar(0)));// + 0.5*nf(x,y,z,1)/rho; 
     h(x,y,z,3) = ufbar(1) + 0.5*afbar(1) - 0.5/(tau_f+0.5)*phi/(rho+phi)*(ufbar(1)-ugbar(1) + 0.5*(afbar(1)-agbar(1)));// + 0.5*nf(x,y,z,2)/rho;
@@ -233,47 +243,7 @@ void hydrovars(int x, int y, int z, // real density & momentum;
     h(x,y,z,6) = ugbar(0) + 0.5*agbar(0) - 0.5/(tau_g+0.5)*rho/(rho+phi)*(ugbar(0)-ufbar(0) + 0.5*(agbar(0)-afbar(0)));// + 0.5*ng(x,y,z,1)/phi;
     h(x,y,z,7) = ugbar(1) + 0.5*agbar(1) - 0.5/(tau_g+0.5)*rho/(rho+phi)*(ugbar(1)-ufbar(1) + 0.5*(agbar(1)-afbar(1)));// + 0.5*ng(x,y,z,2)/phi;
     h(x,y,z,8) = ugbar(2) + 0.5*agbar(2) - 0.5/(tau_g+0.5)*rho/(rho+phi)*(ugbar(2)-ufbar(2) + 0.5*(agbar(2)-afbar(2)));// + 0.5*ng(x,y,z,3)/phi;*/
-  }else{
-    // **********************   WITH NOISE TERM   **********************;
-    // velocity of fluid f, ng[1~D] for x~z components
-    if(rho>epsilon){
-      h(x,y,z,2) = ufbar(0) + 0.5*afbar(0) - 0.5/(tau_f+0.5)*phi/(rho+phi)*(ufbar(0)-ugbar(0) + 0.5*(afbar(0)-agbar(0))) + 0.5*nf(x,y,z,1)/rho;
-      h(x,y,z,3) = ufbar(1) + 0.5*afbar(1) - 0.5/(tau_f+0.5)*phi/(rho+phi)*(ufbar(1)-ugbar(1) + 0.5*(afbar(1)-agbar(1))) + 0.5*nf(x,y,z,2)/rho;
-      h(x,y,z,4) = ufbar(2) + 0.5*afbar(2) - 0.5/(tau_f+0.5)*phi/(rho+phi)*(ufbar(2)-ugbar(2) + 0.5*(afbar(2)-agbar(2))) + 0.5*nf(x,y,z,3)/rho;
-    }else{
-      h(x,y,z,2) = 0.; //ufbar(0) + 0.5*afbar(0) - 0.5/(tau_f+0.5)*phi/(rho+phi)*(ufbar(0)-ugbar(0) + 0.5*(afbar(0)-agbar(0))); 
-      h(x,y,z,3) = 0.;  //ufbar(1) + 0.5*afbar(1) - 0.5/(tau_f+0.5)*phi/(rho+phi)*(ufbar(1)-ugbar(1) + 0.5*(afbar(1)-agbar(1)));
-      h(x,y,z,4) = 0.;  //ufbar(2) + 0.5*afbar(2) - 0.5/(tau_f+0.5)*phi/(rho+phi)*(ufbar(2)-ugbar(2) + 0.5*(afbar(2)-agbar(2)));
-    }
-    // velocity of fluid g, ng[1~D] for x~z components
-    if(phi>epsilon){
-      h(x,y,z,6) = ugbar(0) + 0.5*agbar(0) - 0.5/(tau_g+0.5)*rho/(rho+phi)*(ugbar(0)-ufbar(0) + 0.5*(agbar(0)-afbar(0))) + 0.5*ng(x,y,z,1)/phi;
-      h(x,y,z,7) = ugbar(1) + 0.5*agbar(1) - 0.5/(tau_g+0.5)*rho/(rho+phi)*(ugbar(1)-ufbar(1) + 0.5*(agbar(1)-afbar(1))) + 0.5*ng(x,y,z,2)/phi;
-      h(x,y,z,8) = ugbar(2) + 0.5*agbar(2) - 0.5/(tau_g+0.5)*rho/(rho+phi)*(ugbar(2)-ufbar(2) + 0.5*(agbar(2)-afbar(2))) + 0.5*ng(x,y,z,3)/phi;
-    }else{
-      h(x,y,z,6) = 0.;  //ugbar(0) + 0.5*agbar(0) - 0.5/(tau_g+0.5)*rho/(rho+phi)*(ugbar(0)-ufbar(0) + 0.5*(agbar(0)-afbar(0)));
-      h(x,y,z,7) = 0.;  //ugbar(1) + 0.5*agbar(1) - 0.5/(tau_g+0.5)*rho/(rho+phi)*(ugbar(1)-ufbar(1) + 0.5*(agbar(1)-afbar(1)));
-      h(x,y,z,8) = 0.;  //ugbar(2) + 0.5*agbar(2) - 0.5/(tau_g+0.5)*rho/(rho+phi)*(ugbar(2)-ufbar(2) + 0.5*(agbar(2)-afbar(2)));
-    }
-    
-    for(int n=0; n<3; n++){
-      Real ratiotmp = 0.5*nf(x,y,z,n+1)/rho/(ufbar(n) + 0.5*afbar(n) - 0.5/(tau_f+0.5)*phi/(rho+phi)*(ufbar(n)-ugbar(n) + 0.5*(afbar(n)-agbar(n))));
-      if(std::abs(ratiotmp)>ratio_noisevel){
-        ratio_noisevel = ratiotmp;
-        compMax = n+2;
-      }
-      ratiotmp = 0.5*ng(x,y,z,n+1)/phi/(ugbar(n) + 0.5*agbar(n) - 0.5/(tau_g+0.5)*rho/(rho+phi)*(ugbar(n)-ufbar(n) + 0.5*(agbar(n)-afbar(n))));
-      if(std::abs(ratiotmp)>ratio_noisevel){
-        ratio_noisevel = ratiotmp;
-        compMax = n+6;
-      }
-    }
-    if(ratio_noisevel>1){
-      Print() << "ratio noise/without_noise = " << "(" << x << "," << y << ',' << z << ")-->" << ratio_noisevel << "at component " << compMax 
-      << " with noise terms f: " << nf(x,y,z,compMax+1) << " and g: " << ng(x,y,z,compMax+1) << " and density rho=" << rho << ", phi=" << phi << '\n';
-    }
-
-  }
+  
 
   h(x,y,z,5) = hbar(x,y,z,5);  // pressure, temperally keep unchanged;
 
@@ -289,7 +259,8 @@ void hydrovars(int x, int y, int z, // real density & momentum;
 
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
 Array1D<Real,0,nvel> fequilibrium_moments(const Array1D<Real,0,2>& fields, // rho&phi
-			      const RealVect& u) {  // u is real velocity field of fluid f;
+			      const RealVect& u, const RealVect& fn) {  // u is real velocity field of fluid f (without noise terms effects);
+  //  with noise terms, we need to add the additional terms "0.5*nf(x,y,z,*)/rho" effects by modifying the corresponding velocity related terms;
   Array1D<Real,0,nvel> mEq;
 
   const Real rho = fields(0); // density distribution on current site only;
@@ -302,34 +273,35 @@ Array1D<Real,0,nvel> fequilibrium_moments(const Array1D<Real,0,2>& fields, // rh
   const Real coefAC = coefA*coefC;
   RealVect coefE = { u[0], u[1], u[2] };
   //Print() << coefE << '\n';
-  Real coefD[3][3];   // \frac{\bm{v}\bm{v}}{2c^4}, tensor of size 3*3;
-  coefD[0][0] = u[0]*u[0]/2./cs4; coefD[0][1] = u[0]*u[1]/2./cs4; coefD[0][2] = u[0]*u[2]/2./cs4;
-  coefD[1][0] = coefD[0][1]; coefD[1][1] = u[1]*u[1]/2./cs4; coefD[1][2] = u[1]*u[2]/2./cs4;
-  coefD[2][0] = coefD[0][2]; coefD[2][1] = coefD[1][2]; coefD[2][2] = u[2]*u[2]/2./cs4;
-  const Real trace_coefD = coefD[0][0] + coefD[1][1] + coefD[2][2];
-
-  //  ********************** Problem here ! **********************
-  //  velocity u is too LARGE !
-  /*Real maxCoefD = 0.;
-  for(int i=0; i<3; i++){
-    for(int j=0; j<3; j++){
-      if(std::abs(coefD[i][j])>maxCoefD){ maxCoefD = coefD[i][j]; }
-    }
+  Real coefAD[3][3];   // \frac{\bm{v}\bm{v}}{2c^4}, tensor of size 3*3;
+  coefAD[0][0] = (coefA*u[0]*u[0] + fn[0]*u[0] + 0.25*fn[0]*fn[0]*equivDensityInv(rho))/2./cs4;  //(coefA*u[0] + 0.5*fn[0])*(u[0] + 0.5*fn[0]/rho)/2./cs4; 
+  coefAD[0][1] = (coefA*u[0]*u[1] + 0.5*fn[0]*u[1] + 0.5*fn[1]*u[0] 
+                  + 0.25*fn[0]*fn[1]*equivDensityInv(rho))/2./cs4;  //  (coefA*u[0] + 0.5*fn[0])*(u[1] + 0.5*fn[1]/rho)/2./cs4;
+  coefAD[0][2] = (coefA*u[0]*u[2] + 0.5*fn[0]*u[2] + 0.5*fn[2]*u[0]
+                  + 0.25*fn[0]*fn[2]*equivDensityInv(rho))/2./cs4;  //(coefA*u[0] + 0.5*fn[0])*(u[2] + 0.5*fn[2]/rho)/2./cs4;
+  coefAD[1][0] = coefAD[0][1]; 
+  coefAD[1][1] = (coefA*u[1]*u[1] + fn[1]*u[1] + 0.25*fn[1]*fn[1]*equivDensityInv(rho))/2./cs4; // (coefA*u[1] + 0.5*fn[1])*(u[1] + 0.5*fn[1]/rho)/2./cs4;
+  coefAD[1][2] = (coefA*u[1]*u[2] + 0.5*fn[1]*u[2] + 0.5*fn[2]*u[1] 
+                  + 0.25*fn[1]*fn[2]*equivDensityInv(rho))/2./cs4;// (coefA*u[1] + 0.5*fn[1])*(u[2] + 0.5*fn[2]/rho)/2./cs4;
+  coefAD[2][0] = coefAD[0][2]; coefAD[2][1] = coefAD[1][2]; 
+  coefAD[2][2] = (coefA*u[2]*u[2] + fn[2]*u[2] + 0.25*fn[2]*fn[2]*equivDensityInv(rho))/2./cs4;// (coefA*u[2] + 0.5*fn[2])*(u[2] + 0.5*fn[2]/rho)/2./cs4;
+  const Real trace_coefAD = coefAD[0][0] + coefAD[1][1] + coefAD[2][2];
+  if(rho<epsilon){
+    //printf("density: %f--(%f,%f,%f)\t", rho, 0.25*fn[0]*fn[0]*equivDensityInv(rho), 0.25*fn[1]*fn[1]*equivDensityInv(rho), 0.25*fn[2]*fn[2]*equivDensityInv(rho));
   }
-  Print() << maxCoefD << '\t';*/
 
   mEq( 0) = coefAB;
 
-  mEq( 1) = coefAC*cs2*coefE[0];
-  mEq( 2) = coefAC*cs2*coefE[1];
-  mEq( 3) = coefAC*cs2*coefE[2];
+  mEq( 1) = coefC*cs2*(coefA*u[0] + 0.5*fn[0]);
+  mEq( 2) = coefC*cs2*(coefA*u[1] + 0.5*fn[1]);
+  mEq( 3) = coefC*cs2*(coefA*u[2] + 0.5*fn[2]);
 
-  mEq( 4) = 2.*coefA*cs4*trace_coefD;
-  mEq( 5) = 6.*coefA*cs4*coefD[0][0] - 2.*coefA*cs4*trace_coefD;
-  mEq( 6) = 2.*coefA*cs4*(coefD[1][1] - coefD[2][2]);
-  mEq( 7) = coefA*cs4*(coefD[0][1] + coefD[1][0]);
-  mEq( 8) = coefA*cs4*(coefD[1][2] + coefD[2][1]);
-  mEq( 9) = coefA*cs4*(coefD[0][2] + coefD[2][0]);
+  mEq( 4) = 2.*cs4*trace_coefAD;
+  mEq( 5) = 6.*cs4*coefAD[0][0] - 2.*cs4*trace_coefAD;
+  mEq( 6) = 2.*cs4*(coefAD[1][1] - coefAD[2][2]);
+  mEq( 7) = cs4*(coefAD[0][1] + coefAD[1][0]);
+  mEq( 8) = cs4*(coefAD[1][2] + coefAD[2][1]);
+  mEq( 9) = cs4*(coefAD[0][2] + coefAD[2][0]);
 
   mEq(10) = 0.;
   mEq(11) = 0.;
@@ -338,9 +310,9 @@ Array1D<Real,0,nvel> fequilibrium_moments(const Array1D<Real,0,2>& fields, // rh
   mEq(14) = 0.;
   mEq(15) = 0.;
 
-  mEq(16) = coefAB*(3.*(3.*cs2 + 6.*cs4) - 18.*cs2 + 1) + 3.*coefA*trace_coefD*(6.*cs4+cs2) - coefA*trace_coefD*(6.*cs2+12.*cs4+9.*cs4+18.*cs4*cs2)
-  + coefA*trace_coefD*cs2*(18.*cs2+1) - coefA*cs2*trace_coefD;
-  mEq(17) = 2.*coefA*cs2*(2.*coefD[0][0] - coefD[1][1] - coefD[2][2]) - 18.*coefA*cs4*coefD[0][0] + 6.*coefA*cs4*trace_coefD;
+  mEq(16) = coefAB*(3.*(3.*cs2 + 6.*cs4) - 18.*cs2 + 1) + 3.*trace_coefAD*(6.*cs4+cs2) - trace_coefAD*(6.*cs2+12.*cs4+9.*cs4+18.*cs4*cs2)
+  + trace_coefAD*cs2*(18.*cs2+1) - cs2*trace_coefAD;
+  mEq(17) = 2.*cs2*(2.*coefAD[0][0] - coefAD[1][1] - coefAD[2][2]) - 18.*cs4*coefAD[0][0] + 6.*cs4*trace_coefAD;
   mEq(18) = 0.;
 
   /*for(int i=0;i<nvel;i++){
@@ -353,11 +325,12 @@ Array1D<Real,0,nvel> fequilibrium_moments(const Array1D<Real,0,2>& fields, // rh
 
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
 Array1D<Real,0,nvel> gequilibrium_moments(const Array1D<Real,0,2>& fields,
-				   const RealVect& u) { // u is real velocity field of fluid g;
+				   const RealVect& u, const RealVect& gn) { // u is real velocity field of fluid g;
   Array1D<Real,0,nvel> mEq;
 
   //const Real rho = fields(0);
   const Real phi = fields(1);
+  //Print() << phi << '\t';
 
   const Real coefA = phi;
   const Real coefB = 1.;
@@ -365,24 +338,32 @@ Array1D<Real,0,nvel> gequilibrium_moments(const Array1D<Real,0,2>& fields,
   const Real coefC = 1./cs2;
   const Real coefAC = coefA*coefC;
   RealVect coefE = { u[0], u[1], u[2] };
-  Real coefD[3][3];   // \frac{\bm{v}\bm{v}}{2c^4}, tensor of size 3*3;
-  coefD[0][0] = u[0]*u[0]/2./cs4; coefD[0][1] = u[0]*u[1]/2./cs4; coefD[0][2] = u[0]*u[2]/2./cs4;
-  coefD[1][0] = coefD[0][1]; coefD[1][1] = u[1]*u[1]/2./cs4; coefD[1][2] = u[1]*u[2]/2./cs4;
-  coefD[2][0] = coefD[0][2]; coefD[2][1] = coefD[1][2]; coefD[2][2] = u[2]*u[2]/2./cs4;
-  const Real trace_coefD = coefD[0][0] + coefD[1][1] + coefD[2][2];
+  Real coefAD[3][3];   // \frac{\bm{v}\bm{v}}{2c^4}, tensor of size 3*3;
+  coefAD[0][0] = (coefA*u[0]*u[0] + gn[0]*u[0] + 0.25*gn[0]*gn[0]*equivDensityInv(phi))/2./cs4;  //(coefA*u[0] + 0.5*gn[0])*(u[0] + 0.5*gn[0]/phi)/2./cs4; 
+  coefAD[0][1] = (coefA*u[0]*u[1] + 0.5*gn[0]*u[1] + 0.5*gn[1]*u[0] 
+                  + 0.25*gn[0]*gn[1]*equivDensityInv(phi))/2./cs4;  //  (coefA*u[0] + 0.5*gn[0])*(u[1] + 0.5*gn[1]/phi)/2./cs4;
+  coefAD[0][2] = (coefA*u[0]*u[2] + 0.5*gn[0]*u[2] + 0.5*gn[2]*u[0]
+                  + 0.25*gn[0]*gn[2]*equivDensityInv(phi))/2./cs4;  //(coefA*u[0] + 0.5*gn[0])*(u[2] + 0.5*gn[2]/phi)/2./cs4;
+  coefAD[1][0] = coefAD[0][1];
+  coefAD[1][1] = (coefA*u[1]*u[1] + gn[1]*u[1] + 0.25*gn[1]*gn[1]*equivDensityInv(phi))/2./cs4; // (coefA*u[1] + 0.5*gn[1])*(u[1] + 0.5*gn[1]/phi)/2./cs4;
+  coefAD[1][2] = (coefA*u[1]*u[2] + 0.5*gn[1]*u[2] + 0.5*gn[2]*u[1] 
+                  + 0.25*gn[1]*gn[2]*equivDensityInv(phi))/2./cs4;// (coefA*u[1] + 0.5*gn[1])*(u[2] + 0.5*gn[2]/phi)/2./cs4;
+  coefAD[2][0] = coefAD[0][2]; coefAD[2][1] = coefAD[1][2]; 
+  coefAD[2][2] = (coefA*u[2]*u[2] + gn[2]*u[2] + 0.25*gn[2]*gn[2]*equivDensityInv(phi))/2./cs4;// (coefA*u[2] + 0.5*gn[2])*(u[2] + 0.5*gn[2]/phi)/2./cs4;
+  const Real trace_coefAD = coefAD[0][0] + coefAD[1][1] + coefAD[2][2];
 
   mEq( 0) = coefAB;
 
-  mEq( 1) = coefAC*cs2*coefE[0];
-  mEq( 2) = coefAC*cs2*coefE[1];
-  mEq( 3) = coefAC*cs2*coefE[2];
+  mEq( 1) = coefC*cs2*coefA*u[0];
+  mEq( 2) = coefC*cs2*coefA*u[1];
+  mEq( 3) = coefC*cs2*coefA*u[2];
 
-  mEq( 4) = 2.*coefA*cs4*trace_coefD;
-  mEq( 5) = 6.*coefA*cs4*coefD[0][0] - 2.*coefA*cs4*trace_coefD;
-  mEq( 6) = 2.*coefA*cs4*(coefD[1][1] - coefD[2][2]);
-  mEq( 7) = coefA*cs4*(coefD[0][1] + coefD[1][0]);
-  mEq( 8) = coefA*cs4*(coefD[1][2] + coefD[2][1]);
-  mEq( 9) = coefA*cs4*(coefD[0][2] + coefD[2][0]);
+  mEq( 4) = 2.*cs4*trace_coefAD;
+  mEq( 5) = 6.*cs4*coefAD[0][0] - 2.*cs4*trace_coefAD;
+  mEq( 6) = 2.*cs4*(coefAD[1][1] - coefAD[2][2]);
+  mEq( 7) = cs4*(coefAD[0][1] + coefAD[1][0]);
+  mEq( 8) = cs4*(coefAD[1][2] + coefAD[2][1]);
+  mEq( 9) = cs4*(coefAD[0][2] + coefAD[2][0]);
 
   mEq(10) = 0.;
   mEq(11) = 0.;
@@ -391,9 +372,9 @@ Array1D<Real,0,nvel> gequilibrium_moments(const Array1D<Real,0,2>& fields,
   mEq(14) = 0.;
   mEq(15) = 0.;
 
-  mEq(16) = coefAB*(3.*(3.*cs2 + 6.*cs4) - 18.*cs2 + 1) + 3.*coefA*trace_coefD*(6.*cs4+cs2) - coefA*trace_coefD*(6.*cs2+12.*cs4+9.*cs4+18.*cs4*cs2)
-  + coefA*trace_coefD*cs2*(18.*cs2+1) - coefA*cs2*trace_coefD;
-  mEq(17) = 2.*coefA*cs2*(2.*coefD[0][0] - coefD[1][1] - coefD[2][2]) - 18.*coefA*cs4*coefD[0][0] + 6.*coefA*cs4*trace_coefD;
+  mEq(16) = coefAB*(3.*(3.*cs2 + 6.*cs4) - 18.*cs2 + 1) + 3.*trace_coefAD*(6.*cs4+cs2) - trace_coefAD*(6.*cs2+12.*cs4+9.*cs4+18.*cs4*cs2)
+  + trace_coefAD*cs2*(18.*cs2+1) - cs2*trace_coefAD;
+  mEq(17) = 2.*cs2*(2.*coefAD[0][0] - coefAD[1][1] - coefAD[2][2]) - 18.*cs4*coefAD[0][0] + 6.*cs4*trace_coefAD;
   mEq(18) = 0.;
 
   return mEq;
@@ -401,7 +382,8 @@ Array1D<Real,0,nvel> gequilibrium_moments(const Array1D<Real,0,2>& fields,
 
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
 Array1D<Real,0,nvel> Phif_equilibrium_moments(const Array1D<Real,0,2>& fields,
-				   const RealVect& u, const RealVect& a) {  // u,a are real velocity & acceleration field of fluid f;
+				   const RealVect& u, const RealVect& a, const RealVect& fn) {  // u,a are REAL velocity & acceleration field of fluid f excluding NOISE impact;
+  //  with noise terms, we need to add the additional terms "0.5*nf(x,y,z,*)/rho" effects by modifying the corresponding velocity related terms;
   Array1D<Real,0,nvel> mEq;
 
   const Real rho = fields(0);
@@ -412,11 +394,11 @@ Array1D<Real,0,nvel> Phif_equilibrium_moments(const Array1D<Real,0,2>& fields,
   const Real coefC = 1./cs2;
   const Real coefAC = coefA*coefC;
   RealVect coefE = { a[0], a[1], a[2] };
-  Real coefD[3][3];   // \frac{\bm{a}\bm{v}}{c^4}, tensor of size 3*3; a,v are real hydrodynamic variables;
-  coefD[0][0] = a[0]*u[0]/cs4; coefD[0][1] = a[0]*u[1]/cs4; coefD[0][2] = a[0]*u[2]/cs4;
-  coefD[1][0] = a[1]*u[0]/cs4; coefD[1][1] = a[1]*u[1]/cs4; coefD[1][2] = a[1]*u[2]/cs4;
-  coefD[2][0] = a[2]*u[0]/cs4; coefD[2][1] = a[2]*u[1]/cs4; coefD[2][2] = a[2]*u[2]/cs4;
-  const Real trace_coefD = coefD[0][0] + coefD[1][1] + coefD[2][2];
+  Real coefAD[3][3];   // \frac{\bm{a}\bm{v}}{c^4}, tensor of size 3*3; a,v are real hydrodynamic variables;
+  coefAD[0][0] = a[0]*(coefA*u[0] + 0.5*fn[0])/cs4; coefAD[0][1] = a[0]*(coefA*u[1] + 0.5*fn[1])/cs4; coefAD[0][2] = a[0]*(coefA*u[2] + 0.5*fn[2])/cs4;
+  coefAD[1][0] = a[1]*(coefA*u[0] + 0.5*fn[0])/cs4; coefAD[1][1] = a[1]*(coefA*u[1] + 0.5*fn[1])/cs4; coefAD[1][2] = a[1]*(coefA*u[2] + 0.5*fn[2])/cs4;
+  coefAD[2][0] = a[2]*(coefA*u[0] + 0.5*fn[0])/cs4; coefAD[2][1] = a[2]*(coefA*u[1] + 0.5*fn[1])/cs4; coefAD[2][2] = a[2]*(coefA*u[2] + 0.5*fn[2])/cs4;
+  const Real trace_coefAD = coefAD[0][0] + coefAD[1][1] + coefAD[2][2];
 
   // Correction factor 1./(1.+1./(2.*tau_f)) should be multiplied before each moment's expression;
   const Real modifactor = 1./(1.+1./(2.*tau_f));
@@ -426,12 +408,12 @@ Array1D<Real,0,nvel> Phif_equilibrium_moments(const Array1D<Real,0,2>& fields,
   mEq( 2) = modifactor*coefAC*cs2*coefE[1];
   mEq( 3) = modifactor*coefAC*cs2*coefE[2];
 
-  mEq( 4) = modifactor*2.*coefA*cs4*trace_coefD;
-  mEq( 5) = modifactor*6.*coefA*cs4*coefD[0][0] - 2.*coefA*cs4*trace_coefD;
-  mEq( 6) = modifactor*2.*coefA*cs4*(coefD[1][1] - coefD[2][2]);
-  mEq( 7) = modifactor*coefA*cs4*(coefD[0][1] + coefD[1][0]);
-  mEq( 8) = modifactor*coefA*cs4*(coefD[1][2] + coefD[2][1]);
-  mEq( 9) = modifactor*coefA*cs4*(coefD[0][2] + coefD[2][0]);
+  mEq( 4) = modifactor*2.*cs4*trace_coefAD;
+  mEq( 5) = modifactor*6.*cs4*coefAD[0][0] - 2.*cs4*trace_coefAD;
+  mEq( 6) = modifactor*2.*cs4*(coefAD[1][1] - coefAD[2][2]);
+  mEq( 7) = modifactor*cs4*(coefAD[0][1] + coefAD[1][0]);
+  mEq( 8) = modifactor*cs4*(coefAD[1][2] + coefAD[2][1]);
+  mEq( 9) = modifactor*cs4*(coefAD[0][2] + coefAD[2][0]);
 
   mEq(10) = 0.;
   mEq(11) = 0.;
@@ -440,11 +422,11 @@ Array1D<Real,0,nvel> Phif_equilibrium_moments(const Array1D<Real,0,2>& fields,
   mEq(14) = 0.;
   mEq(15) = 0.;
 
-  mEq(16) = coefAB*(3.*(3.*cs2 + 6.*cs4) - 18.*cs2 + 1) + 3.*coefA*trace_coefD*(6.*cs4+cs2) - coefA*trace_coefD*(6.*cs2+12.*cs4+9.*cs4+18.*cs4*cs2)
-  + coefA*trace_coefD*cs2*(18.*cs2+1) - coefA*cs2*trace_coefD;
+  mEq(16) = coefAB*(3.*(3.*cs2 + 6.*cs4) - 18.*cs2 + 1) + 3.*trace_coefAD*(6.*cs4+cs2) - trace_coefAD*(6.*cs2+12.*cs4+9.*cs4+18.*cs4*cs2)
+  + trace_coefAD*cs2*(18.*cs2+1) - cs2*trace_coefAD;
   mEq(16) = modifactor*mEq(16);
   
-  mEq(17) = 2.*coefA*cs2*(2.*coefD[0][0] - coefD[1][1] - coefD[2][2]) - 18.*coefA*cs4*coefD[0][0] + 6.*coefA*cs4*trace_coefD;
+  mEq(17) = 2.*cs2*(2.*coefAD[0][0] - coefAD[1][1] - coefAD[2][2]) - 18.*cs4*coefAD[0][0] + 6.*cs4*trace_coefAD;
   mEq(17) = modifactor*mEq(17);
 
   mEq(18) = 0.;
@@ -454,7 +436,7 @@ Array1D<Real,0,nvel> Phif_equilibrium_moments(const Array1D<Real,0,2>& fields,
 
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
 Array1D<Real,0,nvel> Phig_equilibrium_moments(const Array1D<Real,0,2>& fields,
-				   const RealVect& u, const RealVect& a) {  // u,a are real velocity & acceleration field of fluid g;
+				   const RealVect& u, const RealVect& a, const RealVect& gn) {  // u,a are real velocity & acceleration field of fluid g;
   Array1D<Real,0,nvel> mEq;
 
   const Real phi = fields(1);
@@ -465,11 +447,11 @@ Array1D<Real,0,nvel> Phig_equilibrium_moments(const Array1D<Real,0,2>& fields,
   const Real coefC = 1./cs2;
   const Real coefAC = coefA*coefC;
   RealVect coefE = { a[0], a[1], a[2] };
-  Real coefD[3][3];   // \frac{\bm{a}\bm{v}}{c^4}, tensor of size 3*3; a,v are real hydrodynamic variables;
-  coefD[0][0] = a[0]*u[0]/cs4; coefD[0][1] = a[0]*u[1]/cs4; coefD[0][2] = a[0]*u[2]/cs4;
-  coefD[1][0] = a[1]*u[0]/cs4; coefD[1][1] = a[1]*u[1]/cs4; coefD[1][2] = a[1]*u[2]/cs4;
-  coefD[2][0] = a[2]*u[0]/cs4; coefD[2][1] = a[2]*u[1]/cs4; coefD[2][2] = a[2]*u[2]/cs4;
-  const Real trace_coefD = coefD[0][0] + coefD[1][1] + coefD[2][2];
+  Real coefAD[3][3];   // \frac{\bm{a}\bm{v}}{c^4}, tensor of size 3*3; a,v are real hydrodynamic variables;
+  coefAD[0][0] = a[0]*(coefA*u[0] + 0.5*gn[0])/cs4; coefAD[0][1] = a[0]*(coefA*u[1] + 0.5*gn[1])/cs4; coefAD[0][2] = a[0]*(coefA*u[2] + 0.5*gn[2])/cs4;
+  coefAD[1][0] = a[1]*(coefA*u[0] + 0.5*gn[0])/cs4; coefAD[1][1] = a[1]*(coefA*u[1] + 0.5*gn[1])/cs4; coefAD[1][2] = a[1]*(coefA*u[2] + 0.5*gn[2])/cs4;
+  coefAD[2][0] = a[2]*(coefA*u[0] + 0.5*gn[0])/cs4; coefAD[2][1] = a[2]*(coefA*u[1] + 0.5*gn[1])/cs4; coefAD[2][2] = a[2]*(coefA*u[2] + 0.5*gn[2])/cs4;
+  const Real trace_coefAD = coefAD[0][0] + coefAD[1][1] + coefAD[2][2];
 
   // Correction factor 1./(1.+1./(2.*tau_g)) should be multiplied before each moment's expression;
   const Real modifactor = 1./(1.+1./(2.*tau_g));
@@ -479,12 +461,12 @@ Array1D<Real,0,nvel> Phig_equilibrium_moments(const Array1D<Real,0,2>& fields,
   mEq( 2) = modifactor*coefAC*cs2*coefE[1];
   mEq( 3) = modifactor*coefAC*cs2*coefE[2];
 
-  mEq( 4) = modifactor*2.*coefA*cs4*trace_coefD;
-  mEq( 5) = modifactor*6.*coefA*cs4*coefD[0][0] - 2.*coefA*cs4*trace_coefD;
-  mEq( 6) = modifactor*2.*coefA*cs4*(coefD[1][1] - coefD[2][2]);
-  mEq( 7) = modifactor*coefA*cs4*(coefD[0][1] + coefD[1][0]);
-  mEq( 8) = modifactor*coefA*cs4*(coefD[1][2] + coefD[2][1]);
-  mEq( 9) = modifactor*coefA*cs4*(coefD[0][2] + coefD[2][0]);
+  mEq( 4) = modifactor*2.*cs4*trace_coefAD;
+  mEq( 5) = modifactor*6.*cs4*coefAD[0][0] - 2.*cs4*trace_coefAD;
+  mEq( 6) = modifactor*2.*cs4*(coefAD[1][1] - coefAD[2][2]);
+  mEq( 7) = modifactor*cs4*(coefAD[0][1] + coefAD[1][0]);
+  mEq( 8) = modifactor*cs4*(coefAD[1][2] + coefAD[2][1]);
+  mEq( 9) = modifactor*cs4*(coefAD[0][2] + coefAD[2][0]);
 
   mEq(10) = 0.;
   mEq(11) = 0.;
@@ -493,11 +475,11 @@ Array1D<Real,0,nvel> Phig_equilibrium_moments(const Array1D<Real,0,2>& fields,
   mEq(14) = 0.;
   mEq(15) = 0.;
 
-  mEq(16) = coefAB*(3.*(3.*cs2 + 6.*cs4) - 18.*cs2 + 1) + 3.*coefA*trace_coefD*(6.*cs4+cs2) - coefA*trace_coefD*(6.*cs2+12.*cs4+9.*cs4+18.*cs4*cs2)
-  + coefA*trace_coefD*cs2*(18.*cs2+1) - coefA*cs2*trace_coefD;
+  mEq(16) = coefAB*(3.*(3.*cs2 + 6.*cs4) - 18.*cs2 + 1) + 3.*trace_coefAD*(6.*cs4+cs2) - trace_coefAD*(6.*cs2+12.*cs4+9.*cs4+18.*cs4*cs2)
+  + trace_coefAD*cs2*(18.*cs2+1) - cs2*trace_coefAD;
   mEq(16) = modifactor*mEq(16);
   
-  mEq(17) = 2.*coefA*cs2*(2.*coefD[0][0] - coefD[1][1] - coefD[2][2]) - 18.*coefA*cs4*coefD[0][0] + 6.*coefA*cs4*trace_coefD;
+  mEq(17) = 2.*cs2*(2.*coefAD[0][0] - coefAD[1][1] - coefAD[2][2]) - 18.*cs4*coefAD[0][0] + 6.*cs4*trace_coefAD;
   mEq(17) = modifactor*mEq(17);
 
   mEq(18) = 0.;
@@ -516,6 +498,8 @@ void collide(int x, int y, int z,
   const RealVect ug = { h(x,y,z,6), h(x,y,z,7), h(x,y,z,8) }; // velocity of g
   const RealVect af = { h(x,y,z,9), h(x,y,z,10), h(x,y,z,11) }; // acceleration of f
   const RealVect ag = { h(x,y,z,12), h(x,y,z,13), h(x,y,z,14) }; // acceleration of g
+  const RealVect noisef = { fn(x,y,z,1), fn(x,y,z,2), fn(x,y,z,3) }; // noise moments of f, x,y & z directions respectively;
+  const RealVect noiseg = { gn(x,y,z,1), gn(x,y,z,2), gn(x,y,z,3) }; // noise moments of f, x,y & z directions respectively;
 
   Array1D<Real,0,nvel> mf, mg, mfEq, mgEq, mPhif, mPhig;
 
@@ -523,12 +507,12 @@ void collide(int x, int y, int z,
   mg = moments(x,y,z,g);
 
   // mf_eq and mg_eq, moments of equilibirum distribution function
-  mfEq = fequilibrium_moments(fields, uf);
-  mgEq = gequilibrium_moments(fields, ug);
+  mfEq = fequilibrium_moments(fields, uf, noisef);
+  mgEq = gequilibrium_moments(fields, ug, noiseg);
 
   // moments of force term
-  mPhif = Phif_equilibrium_moments(fields, uf, af);
-  mPhig = Phig_equilibrium_moments(fields, ug, ag);
+  mPhif = Phif_equilibrium_moments(fields, uf, af, noisef);
+  mPhig = Phig_equilibrium_moments(fields, ug, ag, noiseg);
 
   // thermal noise in moment space: fn(x,y,z,ncomp) & gn(x,y,z,ncomp);
 

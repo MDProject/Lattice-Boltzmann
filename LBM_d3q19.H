@@ -5,7 +5,7 @@ const int nvel = 19;
 
 const Real cs2 = 1./3.;
 const Real cs4 = cs2*cs2;
-const Real mass = 1e-6;
+const Real mass = 1e-10;//0.;
 const Real kBT = cs2*mass;
 
 
