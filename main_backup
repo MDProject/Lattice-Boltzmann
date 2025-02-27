@@ -1,0 +1,555 @@
+#include <AMReX.H>
+#include <AMReX_MultiFab.H>
+#include <AMReX_MFParallelFor.H>
+#include <AMReX_Print.H>
+#include <AMReX_ParmParse.H>
+#include <AMReX_PlotFileUtil.H>
+
+using namespace amrex;
+
+#include "LBM_binary.H"
+#include "Debug.H"
+#include "AMReX_FileIO.H"
+#include "externlib.H"
+#include "AMREX_Analysis.H"
+#include "LBM_hydrovs.H"
+#include "AMReX_DFT.H"
+
+const bool tagHDF5 = false; 
+
+const bool is_flate_interface = false;
+const bool is_droplet = false;
+const bool is_mixture = true;
+const int Ndigits = 6;
+
+inline void WriteOutput(string plot_file_root, int step,
+			const MultiFab& hydrovs,
+			const Vector<std::string>& var_names,
+			const Geometry& geom, bool tagHDF5 = false) {
+
+  const Real time = step;
+  const std::string& pltfile = amrex::Concatenate(plot_file_root,step,Ndigits);
+
+  /*if(!filesystem::exists(pltfile)){
+    if (mkdir(pltfile.c_str(), S_IRWXU | S_IRWXG | S_IROTH | S_IXOTH) == 0 && step < 10 ){    // -1 for unsuccessful;
+        Print() << "folder " << pltfile << "has been created" << std::endl;   
+    }
+  }*/
+
+  if(tagHDF5){
+    //WriteSingleLevelPlotfileHDF5(pltfile, hydrovs, var_names, geom, time, step);
+  }else{
+    WriteSingleLevelPlotfile(pltfile, hydrovs, var_names, geom, time, step);
+  }
+}
+
+inline Vector<std::string> VariableNames(const int numVars) {
+  // set variable names for output
+  Vector<std::string> var_names(numVars);
+  std::string name;
+  int cnt = 0;
+  // rho, phi
+  var_names[cnt++] = "rho";
+  var_names[cnt++] = "phi";
+  // velx, vely, velz of fluid f
+  for (int d=0; d<AMREX_SPACEDIM; d++) {
+    name = "uf";
+    name += (120+d);
+    var_names[cnt++] = name;
+  }
+  var_names[cnt++] = "p_bulk";
+  // velx, vely, velz of fluid g
+  for (int d=0; d<AMREX_SPACEDIM; d++) {
+    name = "ug";
+    name += (120+d);
+    var_names[cnt++] = name;
+  }
+  // acceleration_{x,y,z} of fluid f
+  for (int d=0; d<AMREX_SPACEDIM; d++) {
+    name = "af";
+    name += (120+d);
+    var_names[cnt++] = name;
+  }
+  // acceleration_{x,y,z} of fluid g
+  for (int d=0; d<AMREX_SPACEDIM; d++) {
+    name = "ag";
+    name += (120+d);
+    var_names[cnt++] = name;
+  }
+
+  // The following part is cutoff due to [cnt]>=variables number we input
+  // pxx, pxy, pxz, pyy, pyz, pzz
+  for (int i=0; i<AMREX_SPACEDIM, cnt<numVars; ++i) {
+    for (int j=i; j<AMREX_SPACEDIM, cnt<numVars; ++j) {
+      name = "p";
+      name += (120+i);
+      name += (120+j);
+      var_names[cnt++] = name;
+    }
+  }
+  // kinetic moments
+  for (; cnt<numVars;) {
+    name = "m";
+    name += std::to_string(cnt);
+    var_names[cnt++] = name;
+  }
+
+  // Print all variable names
+  Print() << "Variable names list: ";
+  for(int n=0; n<cnt; n++){
+    Print() << var_names[n] << " ";
+  }
+  Print() << '\n';
+
+  return var_names;
+}
+
+void main_driver(const char* argv) {
+
+
+  bool noiseSwitch;
+  if(T==0){
+    noiseSwitch = false;
+  }else{
+    noiseSwitch = true;
+  }
+
+  string check_point_root_f, check_point_root_g;
+  string plot_file_root;
+  if(is_flate_interface){
+    check_point_root_f = "./data_interface/f_checkpoint";
+    check_point_root_g = "./data_interface/g_checkpoint";
+    plot_file_root = "./data_interface/lbm_data_shshan_alpha0_4_xi_mass1e-5_fittingEQ/plt";
+  }else if(is_droplet){
+    check_point_root_f = "./data_droplet/f_checkpoint";
+    check_point_root_g = "./data_droplet/g_checkpoint";
+    if(noiseSwitch){
+      plot_file_root = "./data_droplet/lbm_data_shshan_alpha0_4_xi_1e-5_size16-16-16_continue/plt";
+    }else{
+      plot_file_root = "./data_droplet/lbm_data_shshan_alpha0_4_xi_0_size16-16-16/plt";
+    }
+  }else if(is_mixture){
+    check_point_root_f = "./data_mixture/f_checkpoint";
+    check_point_root_g = "./data_mixture/g_checkpoint";
+    if(noiseSwitch){
+      plot_file_root = "./data_mixture/lbm_data_shshan_alpha0_0_xi_1e-5_size64-4-4_continue/plt";
+    }else{
+      plot_file_root = "./data_mixture/lbm_data_shshan_alpha0_0_xi_0_size64-4-4/plt";
+    }
+  }
+  // store the current time so we can later compute total run time.
+  Real strt_time = ParallelDescriptor::second();
+    
+  // default grid parameters
+  int nx = 16; //40;
+  int max_grid_size = nx/2;//4;
+
+  // default time stepping parameters
+  int step_continue = 10200;//300;//300;//400;//300;//200; // set to be 0 for noise=0 case; set to be the steps number of the checkpoint file;
+  int nsteps = 60000;
+  int plot_int = 10;
+
+  // default droplet radius (% of box size)
+  Real radius = 0.3;
+
+  // input parameters
+  ParmParse pp;
+  pp.query("nx", nx);
+  pp.query("max_grid_size", max_grid_size);
+  pp.query("nsteps", nsteps);
+  pp.query("plot_int", plot_int);
+  pp.query("T", T);
+  pp.query("kappa", kappa);
+  pp.query("R", radius);
+
+  // set up Box and Geomtry
+  IntVect dom_lo(0, 0, 0);
+  IntVect dom_hi(64-1, 4-1, 4-1); // size 64*2*2 does not work, will break down;
+  
+  //IntVect dom_hi(nx-1, nx-1, nx-1); // for droplet 
+  Array<int,3> periodicity({1,1,1});
+
+  Box domain(dom_lo, dom_hi);
+
+  RealBox real_box({0.,0.,0.},{1.,1.,1.});
+  
+  Geometry geom(domain, real_box, CoordSys::cartesian, periodicity);
+
+  BoxArray ba(domain);
+
+  // split BoxArray into chunks no larger than "max_grid_size" along a direction
+  ba.maxSize(max_grid_size);
+
+  DistributionMapping dm(ba);
+
+  // need two halo layers for gradients
+  int nghost = 2; //2;
+
+  // number of hydrodynamic fields to output
+  int nhydro = 15; //6; 
+
+  // ******************************************************************************************************************************
+  if(false){
+  Print() << "Start\n";
+  int N1 = 400; int N2 = 90000;
+  int Nf = (N2-N1)/plot_int + 1;
+  printf("Total %d frames\n", Nf);
+  MultiFab rho_frames(ba, dm, Nf, nghost);
+  MultiFab rho_frames_dft_norm_mean(ba, dm, 1, nghost); rho_frames_dft_norm_mean.setVal(0.);
+  MultiFab rho_frames_dft_real_mean(ba, dm, 1, nghost); rho_frames_dft_real_mean.setVal(0.);
+  MultiFab rho_frames_dft_imag_mean(ba, dm, 1, nghost); rho_frames_dft_imag_mean.setVal(0.);
+
+
+  MultiFab field_dft_complex;
+  LoadSetOfMultiFabs(plot_file_root, rho_frames, N1, N2, plot_int, 0, false, Ndigits); // component 0;
+
+  Vector< std::string > vec_rho_frames; vec_rho_frames.reserve(Nf);
+  for(int k=0; k<Nf; k++){
+    vec_rho_frames.push_back(std::to_string(k));
+  }
+  WriteSingleLevelPlotfile("./data_mixture/rho_frames", rho_frames, vec_rho_frames, geom, 0, 0);
+
+  /*
+  // substracting the equilibrium mean value;
+  MultiFab rho_mean(ba, dm, 1, nghost); rho_mean.setVal(0.);
+  for(int n=0; n<Nf; n++){
+    amrex::MultiFab::Saxpy(rho_mean, 1., rho_frames, n, 0, 1, nghost);
+    printf("%f\t",rho_frames.sum(n)/(64*4*4));
+  }
+  rho_mean.mult(1./Nf, 0, 1);
+  printf("rho mean: = %f\n", rho_mean.sum(0)/(64*4*4));
+  //rho_frames.plus(-1., 0, Nf, nghost);
+  for (MFIter mfi(rho_frames); mfi.isValid(); ++mfi) {
+    Array4<Real> const& rho_frames_ptr = rho_frames.array(mfi);
+    Array4<Real> const& rho_mean_ptr = rho_mean.array(mfi);
+    Box bx = mfi.validbox();
+    ParallelFor(bx, [=] AMREX_GPU_DEVICE (int i, int j, int k) noexcept {
+      for(int n=0; n<Nf; n++){
+        rho_frames_ptr(i,j,k,n) = rho_frames_ptr(i,j,k,n) - rho_mean_ptr(i,j,k,0);
+      }
+    });
+  }
+  //PrintMultiFab(rho_frames)
+  printf("variation of rho has mean: = %f\n", rho_frames.sum(0)/(64*4*4));
+
+  printf("kBT/cs2 = %f\n", (kBT/cs2));
+  for(int n=0; n<Nf; n++){
+    amrex_fftw_r2c_3d(field_dft_complex, rho_frames, n, true);
+    for (MFIter mfi(field_dft_complex); mfi.isValid(); ++mfi) {
+      Array4<Real> const& rho_frames_ptr = rho_frames.array(mfi);
+      Array4<Real> const& field_dft_ptr = field_dft_complex.array(mfi);
+      Array4<Real> const& rho_frames_dft_real_mean_ptr = rho_frames_dft_real_mean.array(mfi);
+      Array4<Real> const& rho_frames_dft_imag_mean_ptr = rho_frames_dft_imag_mean.array(mfi);
+      Array4<Real> const& rho_frames_dft_norm_mean_ptr = rho_frames_dft_norm_mean.array(mfi);
+      Box bx = mfi.validbox();
+      ParallelFor(bx, [=] AMREX_GPU_DEVICE (int i, int j, int k) noexcept {
+        //Real drho_k2 = field_dft_ptr(i,j,k,0)*field_dft_ptr(i,j,k,0) + field_dft_ptr(i,j,k,1)*field_dft_ptr(i,j,k,1);
+        rho_frames_dft_real_mean_ptr(i,j,k,0) = rho_frames_dft_real_mean_ptr(i,j,k,0) + std::abs(field_dft_ptr(i,j,k,0));
+        rho_frames_dft_imag_mean_ptr(i,j,k,0) = rho_frames_dft_imag_mean_ptr(i,j,k,0) + std::abs(field_dft_ptr(i,j,k,1));
+        rho_frames_dft_norm_mean_ptr(i,j,k,0) = rho_frames_dft_norm_mean_ptr(i,j,k,0) 
+                      + field_dft_ptr(i,j,k,0)*field_dft_ptr(i,j,k,0) + field_dft_ptr(i,j,k,1)*field_dft_ptr(i,j,k,1);
+        if(n==Nf/2){
+          printf("(%d,%d,%d,%d)=(%f)\t", i,j,k, n, rho_frames_ptr(i,j,k,n));
+        }
+        //rho_frames_dft_norm_mean_ptr(i,j,k,0) += drho_k_real;
+      });
+    }
+  }
+  rho_frames_dft_real_mean.mult(1./Nf, 0, 1);
+  rho_frames_dft_imag_mean.mult(1./Nf, 0, 1);
+  rho_frames_dft_norm_mean.mult(1./Nf, 0, 1);
+
+  for (MFIter mfi(rho_frames_dft_real_mean); mfi.isValid(); ++mfi) {
+    //Array4<Real> const& rho_frames_dft_norm_mean_ptr = rho_frames_dft_norm_mean.array(mfi);
+    Array4<Real> const& rho_frames_dft_real_mean_ptr = rho_frames_dft_real_mean.array(mfi);
+    Array4<Real> const& rho_frames_dft_imag_mean_ptr = rho_frames_dft_imag_mean.array(mfi);
+    Array4<Real> const& rho_frames_dft_norm_mean_ptr = rho_frames_dft_norm_mean.array(mfi);
+    Box bx = mfi.validbox();
+    ParallelFor(bx, [=] AMREX_GPU_DEVICE (int i, int j, int k) noexcept {
+      printf("(%d,%d,%d)=(%f,%f,%f)\t", i,j,k, rho_frames_dft_real_mean_ptr(i,j,k,0), rho_frames_dft_imag_mean_ptr(i,j,k,0),
+      rho_frames_dft_norm_mean_ptr(i,j,k,0));
+    });
+  }
+  */
+
+  
+
+  }
+  //******************************************************************************************************************************************************************
+
+
+
+  if(true){
+  // set up MultiFabs
+  MultiFab fold(ba, dm, nvel, nghost);
+  MultiFab fnew(ba, dm, nvel, nghost);
+  MultiFab gold(ba, dm, nvel, nghost);
+  MultiFab gnew(ba, dm, nvel, nghost);
+  MultiFab hydrovs(ba, dm, nhydro, nghost);
+  MultiFab hydrovsbar(ba, dm, nhydro, nghost); // modified hydrodynamic variables
+  MultiFab fnoisevs(ba, dm, nvel, nghost); // thermal noise storage of fluid f for each step;
+  MultiFab gnoisevs(ba, dm, nvel, nghost);
+
+  // set up variable names for output
+  const Vector<std::string> var_names = VariableNames(nhydro);
+
+  MultiFab rho_eq(ba, dm, 1, nghost); rho_eq.setVal(0.);  // default values applies for 0 noise cases
+  MultiFab phi_eq(ba, dm, 1, nghost); phi_eq.setVal(0.);
+  MultiFab rhot_eq(ba, dm, 1, nghost);  rhot_eq.setVal(1.);
+  
+  // for noise
+  if(noiseSwitch){
+    Print() << "Noise switch on\n";
+    if(is_flate_interface){
+      LoadSingleMultiFab("./data_interface/equilibrium_rho", rho_eq);  // the ghost layers values are meaningless
+      LoadSingleMultiFab("./data_interface/equilibrium_phi", phi_eq);
+      LoadSingleMultiFab("./data_interface/equilibrium_rhot", rhot_eq);
+    }else if(is_droplet){
+      LoadSingleMultiFab("./data_droplet/equilibrium_rho", rho_eq);  // the ghost layers values are meaningless
+      LoadSingleMultiFab("./data_droplet/equilibrium_phi", phi_eq);
+      LoadSingleMultiFab("./data_droplet/equilibrium_rhot", rhot_eq);
+    }else if(is_mixture){
+      LoadSingleMultiFab("./data_mixture/equilibrium_rho", rho_eq);  // the ghost layers values are meaningless
+      LoadSingleMultiFab("./data_mixture/equilibrium_phi", phi_eq);
+      LoadSingleMultiFab("./data_mixture/equilibrium_rhot", rhot_eq);
+    }
+    printf("Numerical equilibrium state solution lower bound:\tmin rho_eq: %f\tmin phi_eq: %f\n", rho_eq.min(0), phi_eq.min(0));
+  }else{
+    Print() << "Noise switch off\n";
+  }
+  
+  // pre-processing numerical solution data for the equilibrium state;
+  if(is_droplet && noiseSwitch){
+    Function3DAMReX func_rho_eq(rho_eq, geom);
+    RealVect vec_com = {0., 0., 0.};  
+    getCenterOfMass(vec_com, func_rho_eq);
+    printf("Center Of Mass: (%f,%f,%f)\n", vec_com[0], vec_com[1], vec_com[2]);
+    // Fitting equilibrirum droplet radius; \frac{1}{2}\left(1+\tanh\frac{R-\left|\bm{r}-\bm{r}_{0}\right|}{\sqrt{2W}}\right)
+    Array<Real, 3> param_arr = fittingDropletParams(func_rho_eq, 20, 0.005);  // last 20 steps ensemble mean, relative error < 0.005 bound;
+    printf("fitting parameters for equilibrium density rho: (W=%f, R=%f)\n", param_arr[0], param_arr[1]);
+
+    Real W_fit = param_arr[0];  Real R_fit = param_arr[1];
+    // replace equilibrium state numerical solutions by fitted ones, i.e., [rho_eq], [phi_eq] and [rhot_eq];
+    fitting_density_mfab(rho_eq, phi_eq, rhot_eq, geom, W_fit, R_fit, vec_com);
+    printf("Fitting density profile:\tmin rho_eq: %f\tmin phi_eq: %f\n", rho_eq.min(0), phi_eq.min(0));
+  }
+  
+  // INITIALIZE
+  //LBM_init_droplet(radius, geom, fold, gold, hydrovs, hydrovsbar, fnoisevs, gnoisevs, rho_eq, phi_eq, rhot_eq);
+  
+  bool if_continue_from_last_frame = noiseSwitch? true: false;
+  MultiFab f_last_frame(ba, dm, nvel, nghost);
+  MultiFab g_last_frame(ba, dm, nvel, nghost);
+  
+  string str_step_continue = "";  
+  if(step_continue>0){  str_step_continue = amrex::Concatenate(str_step_continue,step_continue,Ndigits);  }
+  std::string pltfile_f, pltfile_g;
+  if(if_continue_from_last_frame){
+    Print() << "Load in last frame checkpoint ....\n";
+    if(is_flate_interface){
+      pltfile_f = check_point_root_f + str_step_continue;
+      pltfile_g = check_point_root_g + str_step_continue;
+      LoadSingleMultiFab(pltfile_f, f_last_frame);
+      LoadSingleMultiFab(pltfile_g, g_last_frame);
+    }else if(is_droplet){
+      pltfile_f = check_point_root_f + str_step_continue;
+      pltfile_g = check_point_root_g + str_step_continue;
+      LoadSingleMultiFab(pltfile_f, f_last_frame);
+      LoadSingleMultiFab(pltfile_g, g_last_frame);
+    }else if(is_mixture){
+      check_point_root_f = "./data_mixture/f_checkpoint";
+      check_point_root_g = "./data_mixture/g_checkpoint";
+      pltfile_f = check_point_root_f + str_step_continue;
+      pltfile_g = check_point_root_g + str_step_continue;
+      LoadSingleMultiFab(pltfile_f, f_last_frame);
+      LoadSingleMultiFab(pltfile_g, g_last_frame);
+    }
+
+    // continue from given time step
+
+    LBM_init(geom, fold, gold, hydrovs, hydrovsbar, fnoisevs, gnoisevs, 
+    f_last_frame, g_last_frame, rho_eq, phi_eq, rhot_eq);
+    
+    PrintDensityFluctuation(hydrovs, var_names, -1); // last frame;
+  }else{
+    if(is_flate_interface){
+      
+    }else if(is_droplet){
+      LBM_init_droplet(radius, geom, fold, gold, hydrovs, hydrovsbar, fnoisevs, gnoisevs, rho_eq, phi_eq, rhot_eq);
+    }else if(is_mixture){
+      LBM_init_mixture(geom, fold, gold, hydrovs, hydrovsbar, fnoisevs, gnoisevs, rho_eq, phi_eq, rhot_eq);
+    }
+  }
+  Print() << "hydrovsbar\n";
+  MultiFabNANCheck(hydrovsbar, true, 0);
+  Print() << "hydrovs\n";
+  MultiFabNANCheck(hydrovs, true, 0);
+  // Write a plotfile of the initial data if plot_int > 0
+  if (plot_int > 0 && step_continue == 0)
+    WriteOutput(plot_file_root, 0, hydrovs, var_names, geom);
+  Print() << "LB initialized with alpha0 = " << alpha0 << '\n';
+
+  // TIMESTEP
+  for (int step=step_continue+1; step <= step_continue+nsteps; ++step) {
+    LBM_timestep(geom, fold, gold, fnew, gnew, hydrovs, hydrovsbar, fnoisevs, gnoisevs, rho_eq, phi_eq, rhot_eq);
+    MultiFabNANCheck(hydrovs, false, step);
+    if (plot_int > 0 && step%plot_int ==0){
+      PrintDensityFluctuation(hydrovs, var_names, step);
+      WriteOutput(plot_file_root, step, hydrovs, var_names, geom, tagHDF5);
+      Print() << "LB step " << step << "\n";
+    }
+  }
+  // write out last frame checkpoint (preparing for switching on noise, only run for noise=0)
+  pltfile_f = amrex::Concatenate(check_point_root_f, step_continue+nsteps, Ndigits);
+  pltfile_g = amrex::Concatenate(check_point_root_g, step_continue+nsteps, Ndigits);
+  std::cout << pltfile_f << std::endl;
+  if(is_flate_interface){
+     
+  }else if(is_droplet){
+    Vector< std::string > varname_chk;  varname_chk.push_back("rho_chk");
+    WriteSingleLevelPlotfile(pltfile_f, fold, varname_chk, geom, 0, 0);
+    varname_chk.clear();  varname_chk.push_back("phi_chk");
+    WriteSingleLevelPlotfile(pltfile_g, gold, varname_chk, geom, 0, 0);
+  }else if(is_mixture){
+    Vector< std::string > varname_chk;  varname_chk.push_back("rho_chk");
+    WriteSingleLevelPlotfile(pltfile_f, fold, varname_chk, geom, 0, 0); // time & step = 0 just for simplicity; meaningless here;
+    varname_chk.clear();  varname_chk.push_back("phi_chk");
+    WriteSingleLevelPlotfile(pltfile_g, gold, varname_chk, geom, 0, 0); // time & step = 0 just for simplicity; meaningless here;
+  }
+  
+  const IntVect box = geom.Domain().length();
+  PrintMassConservation(hydrovs, var_names, box[0], radius*box[0]);
+
+  // Call the timer again and compute the maximum difference between the start time 
+  // and stop time over all processors
+  Real stop_time = ParallelDescriptor::second() - strt_time;
+  ParallelDescriptor::ReduceRealMax(stop_time);
+
+  amrex::Print() << "Run time = " << stop_time << std::endl;
+
+  // Print convergence and extract the equilibrium state solution;
+  MultiFab mfab_rho_eq(ba, dm, 1, nghost);
+  MultiFab mfab_phi_eq(ba, dm, 1, nghost);
+  MultiFab mfab_rhot_eq(ba, dm, 1, nghost);
+  int t_window = 20;
+  int step1 = step_continue + nsteps - t_window; int step2 = step_continue + nsteps;
+
+  PrintConvergence(plot_file_root, step1, step2, plot_int, mfab_rho_eq, 0, 1/*lp,p=1 norm*/, (!noiseSwitch), 0, Ndigits); // copy the ensemble averaged solution to [mfab_rho_eq];
+  Vector< std::string > vec_varname;  vec_varname.push_back("rho_eq");
+  if(!noiseSwitch && is_droplet){
+    WriteSingleLevelPlotfile("./data_droplet/equilibrium_rho", mfab_rho_eq, vec_varname, geom, 0, 0);
+  }else if(!noiseSwitch && is_mixture){
+    WriteSingleLevelPlotfile("./data_mixture/equilibrium_rho", mfab_rho_eq, vec_varname, geom, 0, 0);  // time & step = 0 just for simplicity; meaningless here;
+  }else if(!noiseSwitch && is_flate_interface){
+
+  }
+
+  vec_varname.clear();  vec_varname.push_back("phi_eq");
+  PrintConvergence(plot_file_root, step1, step2, plot_int, mfab_phi_eq, 1, 1/*lp,p=1 norm*/, (!noiseSwitch), 0, Ndigits);  // [phi] at index 1;
+  if(!noiseSwitch && is_droplet){
+    WriteSingleLevelPlotfile("./data_droplet/equilibrium_phi", mfab_phi_eq, vec_varname, geom, 0, 0);
+  }else if(!noiseSwitch && is_mixture){
+    WriteSingleLevelPlotfile("./data_mixture/equilibrium_phi", mfab_phi_eq, vec_varname, geom, 0, 0);  // time & step = 0 just for simplicity; meaningless here;
+  }else if(!noiseSwitch && is_flate_interface){
+    
+  }
+  
+  vec_varname.clear();  vec_varname.push_back("rhot_eq");
+  PrintConvergence(plot_file_root, step1, step2, plot_int, mfab_rhot_eq, 5, 1, (!noiseSwitch), 0, Ndigits); // total density at index 5; nlevel=0;
+  if(!noiseSwitch && is_droplet){
+    WriteSingleLevelPlotfile("./data_droplet/equilibrium_rhot", mfab_rhot_eq, vec_varname, geom, 0, 0);
+  }else if(!noiseSwitch && is_mixture){
+    WriteSingleLevelPlotfile("./data_mixture/equilibrium_rhot", mfab_rhot_eq, vec_varname, geom, 0, 0);  // time & step = 0 just for simplicity; meaningless here;
+  }else if(!noiseSwitch && is_flate_interface){
+    
+  }
+
+  }
+  
+}
+
+
+
+
+/*
+Visualization Tools Amrvis relies on "openmotif" on mac.
+volpack.h files directory needs to be included in makefile
+*/
+
+// For TEST ONLY;
+/*void main_driver(const char* argv){
+  std::vector<int> g1;
+  for (int i = 1; i <= 5; i++)
+    g1.push_back(i);
+  SliceWriteToPlainText(g1, ".", "test.dat");
+}*/
+
+/***************
+  ******************  MultiFab related operations *******************
+  
+  // Read in last N output files
+  MultiFab** vec_mfp = new MultiFab*[20];
+  //MultiFab* vec_mfobj = new MultiFab[20]; see below, operator = overload is deleted;
+  for(int n=0; n<10; n++){
+    MultiFab* hydrovs_readin_ptr = new MultiFab(ba, dm, nvel, nghost);
+    for (MFIter mfi((*hydrovs_readin_ptr)); mfi.isValid(); ++mfi) {
+        Print() << (*hydrovs_readin_ptr)[mfi].box() << '\n';  // including ghost layers
+        Print() << mfi.tilebox() << '\n';   // excluding ghost layers
+        Print() << mfi.validbox() << '\n';  // excluding ghost layers
+    }
+    //MultiFab hydrovs_readin(ba, dm, nhydro, nghost);
+    const std::string& checkpointname = amrex::Concatenate("./lbm_data_shshan_alpha0_4_xi_0/plt",200+10*n,5);
+    VisMF::Read((*hydrovs_readin_ptr), amrex::MultiFabFileFullPrefix(0, checkpointname, "Level_", "Cell"));
+    vec_mfp[n] = hydrovs_readin_ptr;
+
+    /*  overload resolution selected deleted operator '=' so this CANNOT work
+    MultiFab hydrovs_readin_obj(ba, dm, nvel, nghost);
+    VisMF::Read(hydrovs_readin_obj, amrex::MultiFabFileFullPrefix(0, checkpointname, "Level_", "Cell"));
+    vec_mfobj[n] = hydrovs_readin_obj;***************/
+
+    /****************
+    for (MFIter mfi((*hydrovs_readin_ptr)); mfi.isValid(); ++mfi) {
+      const Box& valid_box = mfi.validbox();  // It excludes any regions added due to ghost cells or other boundary extensions.
+
+      Print() << mfi.tilebox() << '\n'; // excluding ghost layers
+      Print() << mfi.validbox() << '\n';  // excluding ghost layers
+      Print() << (*hydrovs_readin_ptr)[mfi].box() << '\n';  // excluding ghost layers?? why
+      // Access the FArrayBox corresponding to the current box
+      const FArrayBox& fab = (*hydrovs_readin_ptr)[mfi];
+
+      // Create a new FArrayBox to hold the extracted component
+      FArrayBox extracted_component(valid_box, 1); // One component only
+
+      // Copy the desired component from the original FArrayBox
+      extracted_component.copy(fab, valid_box, 0, valid_box, 0, 1); // srcfab, srcbox, srccomp, destbox, destcomp, numcomp
+      /*Note that although the srcbox and the destbox may be disjoint, they must be the same size and shape.
+      If the sizes differ, the copy is undefined and a runtime error results.
+      // Do something with the extracted component (e.g., print or process)
+      // std::cout << "Extracted component " << 0 << " for box " << valid_box << std::endl;
+    }
+  }***************/
+
+  /****************
+  // print multifab stored in MultiFab array [vec_mfp]
+  for(int n=0; n<10; n++){
+    auto const & mfab_multi_array4D = (*vec_mfp[n]).arrays();
+    ParallelFor((*vec_mfp[n]), IntVect(0), [&] AMREX_GPU_DEVICE(int nbx, int x, int y, int z) {
+        if(x==0&&y==0&&z==0){
+          Print() << mfab_multi_array4D[nbx](x,y,z,5) << "  ";
+        }
+    });
+  }
+
+  // extract single component from MultiFab A to a new MultiFab B;
+  // construct new MultiFab [testfunc_new] of total 1 component with same BoxArray, DistributionMapping and ghost layers;
+  MultiFab mfab_rho(vec_mfp[0]->boxArray(), vec_mfp[0]->DistributionMap(), 10, vec_mfp[0]->nGrow());
+  Print() << mfab_rho.nGrow() << '\n';
+  mfab_rho.copy((*vec_mfp[0]), 5, 0, 1);   // copy the 5th component of [*vec_mfp[0]] to [mfab_rho]'s 0th component, with total num of comps=1;
+  auto const & mfab_rho_array = mfab_rho.arrays();
+  auto const & mfab_multi_array4D = (*vec_mfp[0]).arrays();
+  // mfab_rho.FillBoundary(geom.periodicity());  // copy() does not deal with the periodic boundary condition; need to fill boundary condition again!!
+  ParallelFor(mfab_rho, IntVect(0), [=] AMREX_GPU_DEVICE(int nbx, int x, int y, int z) {
+    Print() << '(' << nbx << "," << x << ',' << y << ',' << z << ")-(" << mfab_rho_array[nbx](x,y,z,0) 
+    << ',' << mfab_multi_array4D[nbx](x,y,z,5) << ')' << '\t';
+  });   
+  *******************/
